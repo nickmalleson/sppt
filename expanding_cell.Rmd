@@ -343,14 +343,14 @@ for (i in 4:1) {
   s <- shading(s.breaks, cols=brewer.pal(length(s.breaks)+1,'RdYlGn') ) 
   
   choropleth(r$results[[index]], r$results[[index]]@data$abs.pct.diff, main=paste("Absoulte difference in percentages",i),
-             lty=0)
+             lty=0, shading = s)
   choro.legend("topright", sh = s, cex=0.8)
 }
 ```
 
 Finally make a fuzzy grid of all results
 
-```{r map.abs.prop.diff.fuzzy}
+```{r map.abs.prop.diff.fuzzy, fig.width=8, fig.height=8}
 par(mfrow=c(1,1))
 
 statistic <- "abs.prop.diff" # The statistic to map
@@ -361,6 +361,7 @@ shades <- shading(
     classIntervals(last.result@data$abs.pct.diff, n = 8, style = 'kmeans')$brks,
     cols=add.alpha(brewer.pal(9,'Reds'), (1/length(r$results))) 
 )
+
 
 choropleth(
   last.result, last.result@data$abs.pct.diff,
@@ -375,6 +376,12 @@ for ( index in 1:(length(r$results)-1)) {
   lty=0,
   add=TRUE)
 }
+
+# For the legend, redo the shading as above but without the alpha (don't want the legend colours to be transparent)
+choro.legend("topright", sh=shading(
+  classIntervals(last.result@data$abs.pct.diff, n = 8, style = 'kmeans')$brks, 
+  cols=add.alpha(brewer.pal(9,'Reds'), (1/length(r$results))) ) 
+)
 
 ```
 
