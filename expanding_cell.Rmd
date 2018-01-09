@@ -77,7 +77,6 @@ src="http://www.geog.leeds.ac.uk/courses/other/programming/practicals/general/mo
 Configure the script here. (Un)comment or edit lines as appropriate to change the data used and the parameters for the method.
 
 ```{r config}
-N <- 10 # The number of cell resolutions to run. (1=just one big cell surrounding all of the data)
 
 # For the basic test:
 #datasource <- "../data/basic_test/" # The folder with the shapefiles
@@ -97,7 +96,7 @@ test.layer <- "points2" # THe name of the test dataset
  
 ## Read Data
 
-```{r readData, message=FALSE}
+```{r readData, message=FALSE, cache=TRUE}
 
 # Read some data
 
@@ -334,12 +333,18 @@ for (i in 4:1) {
 
 # Now map the difference in the proportions
 
-```{r map.abs.prop.diff}
+```{r map.abs.prop.diff, fig.width=8, fig.height=6}
 par(mfrow=c(2,2))
+NCOL <- 9
 for (i in 4:1) {
   index <- round(length(r$results) / i )
+  
+  s.breaks <- classIntervals(r$results[[index]]@data$abs.pct.diff, n = NCOL, style = 'pretty')$brks
+  s <- shading(s.breaks, cols=brewer.pal(length(s.breaks)+1,'RdYlGn') ) 
+  
   choropleth(r$results[[index]], r$results[[index]]@data$abs.pct.diff, main=paste("Absoulte difference in percentages",i),
              lty=0)
+  choro.legend("topright", sh = s, cex=0.8)
 }
 ```
 
@@ -354,7 +359,7 @@ last.result <- r$results[[length(r$results)]] # Convenience for list result gene
 # Shading
 shades <- shading(
     classIntervals(last.result@data$abs.pct.diff, n = 8, style = 'kmeans')$brks,
-    cols=add.alpha(brewer.pal(9,'Reds'), (1/N)) 
+    cols=add.alpha(brewer.pal(9,'Reds'), (1/length(r$results))) 
 )
 
 choropleth(
@@ -364,7 +369,7 @@ choropleth(
   lty=0
   )
 
-for ( index in 1:(N-1)) {
+for ( index in 1:(length(r$results)-1)) {
   choropleth( r$results[[index]], r$results[[index]]@data$abs.pct.diff,
   shading = shades,
   lty=0,
@@ -401,3 +406,29 @@ plot(x=rev(r$cell.areas), y=r$rmse, type='o', main="RMSE", xlab="Square area of 
 
 
 ```
+
+
+
+
+
+Save the results for mapping or whatever:
+
+```{r save.results, warning=FALSE }
+
+# The numbers used to make the graphs
+write.csv(data.frame("CellArea"=r$cell.areas, "NumCells"=r$num.cells, "RSS"=r$rss, "RSquared"=r$r.squared, "RMSE"=r$rmse), file = "ROUT/results.csv")
+
+# Delete old shapefiles
+
+files <- list.files(path = "./ROUT", pattern = "result_")
+for (f in files) {
+  file.remove(paste0("./ROUT/",f))
+}
+
+for (i in 1:length(r$results)) {
+  writeOGR(obj = r$results[[i]], dsn = "./ROUT", layer = paste0("result_",i), driver = "ESRI Shapefile")
+}
+
+
+```
+
