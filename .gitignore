@@ -3,6 +3,10 @@
 .RData
 .Ruserdata
 
+# Some data
+data-raw/vancouver_public/
 
 # Temporary files made by Nick's Rmd script
 ROUT/*
+spatial_resolution_cache/
+spatial_resolution_files/

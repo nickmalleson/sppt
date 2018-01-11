@@ -1,0 +1,608 @@
+---
+title: "Identifying the Appropriate Spatial Resolution for the Analysis of Crime Patterns"
+author: "Nick Malleson"
+date: '`r format(Sys.time(), "%d %B, %Y (%H:%M)")`'
+output:
+  html_document: 
+    toc: yes
+    pandoc_args: [
+      "+RTS", "-K64m",
+      "-RTS"
+    ]
+  pdf_document:
+    fig_crop: no
+    highlight: kate
+    keep_tex: yes
+    latex_engine: xelatex
+    number_sections: yes
+fontsize: 10pt
+---
+
+_Note: This was originally part of: the [spatialtest](https://github.com/nickmalleson/spatialtest/) github repository. This file superseeds that one as the code has been tidied up etc._
+
+# Overview 
+
+**Research question**: What is the 'spatial resolution' of different types of crime?
+
+(Or: what is the largest possible spatial resolution that we can use, before aggregation hides important lower-level variation)
+
+(Or: is crime more/less concentrated than other phenomena?)
+
+(Or: repeat the 2011 crime stability paper?)
+
+We know that for many types of crime if you aggregate data to anything larger than a block then you hide important underlying spatial variation, but is this resolution the same for all types of crime? At what point are the diminishing returns of increased spatial resolution take over?
+
+**Method**
+
+ - For a number of different of crime types (point patterns), choose two time periods (_can refer to Martin's temporal sppt paper to identify crimes and time periods that are stable_). Then:
+ 
+ 1. Aggregate the points to a regular grid
+ 2. Calculate the S-Index (local and global)
+ 3. Shift the grids multiple times in N, E, S, W in order to reduce the impact of MAUP and calculate S-Index again
+ 4. Increase the resolution of the grid, and repeat
+
+
+**Results**
+
+ - Graph the resolution against S-Index for the different crimes (see below)
+ - At the point where the graph ‘kinks’ you have found the optimal resolution (cells as large as they can go before the differences start to explode).
+ - (Fuzzy) map of the local S-Index to see where there are differences (i.e. maybe it is more appropriate to change the resolution by area)
+ - Could also explore the relationship in more detail, e.g. log plots become linear for some crimes? What impact does this have on how they should be analysed? Etc.
+
+**Decisions / for discussion**
+
+ - Need to decide on temporal resolution for comparison
+   - Need two patterns for which we expect no structural change – i.e. any differences are random. 
+
+
+
+## Notes on the Multiscale Spatial Error Assessment Method
+
+This is the R implementation and further development of the Multiscale Spatial Error Assessment method (aka [Multiscale Validation](http://www.geog.leeds.ac.uk/courses/other/programming/practicals/general/modelling/validation/multiscale-code/2.html)).
+
+The aim of the method is to take two point-patterns, iteratively aggregate the points to cells of increasing size, and calculate the error between the two data sets at the different grid resoultions. See the right images for an example (from  [here](http://www.geog.leeds.ac.uk/courses/other/programming/practicals/general/modelling/validation/multiscale-code/2.html)).
+
+The method has has been used in the following paper:
+
+Malleson, N., A. Heppenstall, L. See, A. Evans (2013) Using an agent-based crime simulation to predict the effects of urban regeneration on individual household burglary risk. _Environment and Planning B: Planning and Design._ 40(3) 405-426. Available [here](http://www.envplan.com/abstract.cgi?id=b38057) and [here](http://nickmalleson.co.uk/wp-content/uploads/2013/05/EPB-V6-forBlog.pdf) (if you don't have access to the journal)
+
+Thanks to Lex Comber and Chris Brunsdon for their excellent book 'R for Spatial Analysis and Mapping'. I got most of the R GIS stuff from there.
+
+Brunsdon, C and Comber, L (2015) _An Introduction to R for Spatial Anaysis and Mapping_. Sage
+
+<img style="float:right; width:40%"
+src="http://www.geog.leeds.ac.uk/courses/other/programming/practicals/general/modelling/validation/multiscale-code/images/graph.jpg"
+/>
+
+## Configuration and library loading
+
+Configure the script here. (Un)comment or edit lines as appropriate to change the data used and the parameters for the method.
+
+```{r initialise, echo=FALSE, message=FALSE, warning=FALSE}
+WORKING_DIR <- '~/research_not_syncd/git_projects/sppt/'
+setwd(WORKING_DIR)
+
+library(GISTools)
+#library(rgeos)    # For things like gIntersects
+library(rgdal)     # For reading shapefiles
+library(raster)    # For creating regular grids
+#library(plyr)     # For counting and aggregating
+#library(tmap)     # For thematic maps
+library(classInt) # Jenks natural breaks
+#library(png)      # For loading pngs after they have been written
+#library(grid)     # so that they can be embedded in knitted documents
+#library(spdep)    # For doing the spatial regression, contiguity matrices, etc.
+#library(GWmodel)  # For geographically weighted regression (GWR)
+#library(MASS)     # For stepwise regression (stepAIC())
+#library(pander)   # For printing tables nicely
+#library(MVN)      # For testing for multivariate normality (MVN)
+#library(RColorBrewer) # For making nice colour themes
+library(hydroGOF)   # Has an rmse() function
+
+library(sppt) # The spatial point pattern test library (see https://github.com/wsteenbeek/sppt for install instructions)
+
+# For the basic test:
+#datasource <- "../data/basic_test/" # The folder with the shapefiles
+
+# Some London data:
+#datasource <- "../data/london_burglary/" 
+
+# Some Vancouver data:
+datasource <- "./data-raw/vancouver_all/"
+
+base.layer <- "points1" # THe name of the base dataset
+test.layer <- "points2" # THe name of the test dataset
+#areas.layer <- "areas"  # The polygon boundary file
+
+# multiprocess <- FALSE # Whether to run the simulation using multiple cores
+```
+ 
+
+# Introduction
+
+XXXX
+
+
+# Background
+
+XXXX
+
+
+# Data
+
+XXXX Information about the data
+
+```{r readData, message=FALSE, cache=TRUE}
+
+# Read some data
+
+#areas <- readOGR(ds = datasource, layer=areas.layer)
+base.data <- readOGR(ds = datasource, layer=base.layer)
+test.data <- readOGR(ds = datasource, layer=test.layer)
+
+
+#plot(areas)
+plot(base.data, col="blue", pch=3)
+plot(test.data, col="red",  pch=3, add=T)
+legend("topright", legend=c("base","test"), col=c("blue", "red"), pch=3)
+
+```
+
+# The Multi-Scale Error Assessment Method (MSEA)
+
+The method works as follows:
+
+ 1. Aggregate the points to a regular grid
+ 2. Calculate the S-Index (local and global) (as well as some other statistics)
+ 3. Shift the grids multiple times in N, E, S, W in order to reduce the impact of MAUP and calculate S-Index again
+ 4. Increase the resolution of the grid, and repeat
+  
+The following defines a function that will run the method.
+
+```{r defineMSEA}
+
+#' Multi-Scale Error Assessment (MSEA).
+#'
+#' Run the Multi-Scale Error Assessment (MSEA) method, returning the difference between two point data sets at different geographical scales using different measures of error
+#' 
+#' XXXX OTHER DETAILS (i.e. how the method works?)
+#' 
+#' @param points1 A set of points (a SpatialPointsDataFrame, or SpatialPoints object)
+#' @param points2 The set of points to compare against (another SpatialPointsDataFrame or SpatialPoints object)
+#' @param N The number of times to sub-divide the largest cell. I.e. if N=20 then the smallest grid at which error is calculated will be 20*20 cells. Note: the algorithm starts at i=2 which gives 2*2=4 cells as the most coarse resolution (doesn't make sense to calculate error for 1 data point)
+#' @param ignore.zeros Whether to remove cells with no crimes in them (the abundance of zeros at higher resolutions can distort the statistics)
+#'
+#' @return An list that encapsulates the results of the test as well as some other useful information:
+#' 
+#'  \code{results} - a list of the individual grids computed for each cell size. This will have length N. Each item in the list is a SpatialPolygonsDataFrame with the following attributes:
+#'  \itemize{
+#'  \item{"CellID"}{A unique numerical ID for each cell in the grid}
+#'  \item{"points1"}{The number of points from the points1 dataset that fall within the cell}
+#'  \item{"points2"}{The number of points from the points2 dataset that fall within the cell}
+#'  \item{"p1.pct"}{The percentage of points from the points1 dataset that fall within the cell}
+#'  \item{"p2.pct"}{The percentage of points from the points1 dataset that fall within the cell}
+#'  \item{"diff"}{The difference in the number of points (points1 - points2)}
+#'  \item{"abs.diff"}{The absolute difference in the number of points}
+#'  \item{"abs.pct.diff"}{The absolute difference in the percentages (nice to map)}
+#'  \item{"localS"}{Andresen's Local S Index}
+#'  \item{"localS.robust"}{Robust version of Andresen's Local S Index (ignores areas with no points)}
+#'  \item{"similarity"}{The similarity (like S but just highlights difference, not direction)}
+#'  \item{"similarity.robust"}{Robust version of \code{similarity}}
+#'  \item{"ConfLowP"}{The lower confidence limit for the S Index}
+#'  \item{"ConfUppP"}{The upper confidence limit for the S Index}
+#' }
+#'
+#'  \code{cell.areas} - A vector (length N) with the square area of a cell in each grid
+#'
+#'  \code{num.cells} - A vector (length N) with the number of cells in each grid
+#'
+#'  \code{rss} - a vector of length N with the residual sum of squares error value for each grid
+#'
+#'  \code{r.squared} - a vector of length N with the R-Squared error for each grid
+#'
+#'  \code{rmse} - a vector of length N with the Root Mean Square Error value for each grid
+#'
+#'  \code{globalS} - a vector of length N with Andresen's Global S index
+#'
+#'  \code{globalS.robust} - a vector of length N with the robust version of Andresen's Global S index that 
+#'    ignores areas with no points (note that if \code{ignore.zeros} is \code[TRUE] then this is the
+#'    same as the \code{globalS})
+#' 
+#'
+#'
+#'  \code{s.object} - a vector of length N with the object returned by the call to \code{sppt} (used to 
+#'    calculate the S Index). This can be useful for debugging etc, but is probably unnecessary as 
+#'    all of the useful global and local information returned from \code{sppt} have been included directly.
+#'
+#' @examples
+#' rmse(points1, points2)
+msea <- function(points1, points2, N=20, ignore.zeros=FALSE) {
+  
+  # Check that the projections are the same
+  if ( proj4string(points1) != proj4string(points2) ) {
+    warning("The points1 and points2 projections are different, this will probably lead to catastrophic results!")
+  }
+    
+  bb <- bbox(points1 + points1) # A bounding box around all points
+  
+  # Store all grids (data frames) in a big long list
+  results <- list()
+  # Remember some other things that are useful later
+  cell.areas <- c() # The area of the cells
+  num.cells <- c()  # The number of cells in each iteration
+
+  # Remember the global errors associated with each grid
+  rss <- c() # Residual sum of squares
+  r.squared <- c()
+  rmse <- c()
+  globalS <- c()
+  globalS.robust <- c()
+  
+  # Keep a link to the object that is returned from the call to sppt. Useful for debugging mostly.
+  s.object <- c()
+
+  # Create the grids - adapted from Brunsdon & Comber (2015, p150)
+  # Note: will actually start at i=2 which gives 2*2=4 cells (doesn't make sense to calculate error for 1 data point)
+  # but it's easier to start from i=1 and delete that result afterwards
+  for (i in seq(1,N)) {
+    # Cell size is the total width divided by the number of cells to draw so far (i)
+    cell.width <- (bb[1,2] - bb[1,1]) / i
+    cell.height <- (bb[2,2] - bb[2,1]) / i
+    cell.areas <- c(cell.areas, (cell.width * cell.height) ) # Also remember the cell area for later
+    
+    # For each resolution, repeat a few times by slightly shifting each grid in N, E, S, W to lessen the impact of MAUP
+    # NOT IMPLEMENTED YET. SLIGHTLY TRICKY BECAUSE GRID WILL NEED TO BE BIGGER OTHERWISE SOME POINTS WILL NOT BE COVERED
+    for (shift in 1:1) {
+      # Need to calculate the centre of the bottom-right cell
+      if (shift==1) { # This is the grid with no shifting (i.e. it fits perfectly over the study area)
+        centre.x <- bb[1,1] + ( cell.width / 2 )
+        centre.y <- bb[2,1] + ( cell.height / 2 )
+      }
+      # .. WILL IMPLEMENT REMAINING SHIFTS HERE
+      
+      # Create a grid  
+      grd <- GridTopology(
+        cellcentre.offset = c(centre.x, centre.y), # No offset, the grid will just cover all the points
+        cellsize = c(cell.width, cell.height),
+        cells.dim = c(i,i)
+      )
+      
+      number.of.cells <- i * i
+      num.cells <- c(num.cells, number.of.cells) # Remember the number of cells in this iteration
+      
+      # Convert the grid into a SpatialPolygonsDataFrame
+      spdf <- SpatialPolygonsDataFrame(
+        as.SpatialPolygons.GridTopology(grd),
+        data = data.frame(c(1:number.of.cells)),
+        match.ID = FALSE
+      )
+      proj4string(spdf) <- proj4string(points1)
+      names(spdf) <- "CellID" # Name the column
+      
+      # Aggregate the points
+      spdf@data$points1 <- poly.counts(points1, spdf)
+      spdf@data$points2 <- poly.counts(points2, spdf)
+      
+      # Drop cells with 0 for both counts?
+      if (ignore.zeros) {
+        spdf <- spdf[which(spdf@data$points1>0 & spdf@data$points2>0),]
+        stopifnot( length(which(spdf@data$points1==0 & spdf@data$points2==0)) == 0 )
+      }
+      
+      # Calculate percentages of points in each area (might be useful)
+      spdf@data$p1.pct <- 100 * spdf@data$points1 / sum(spdf@data$points1 )
+      spdf@data$p2.pct <- 100 * spdf@data$points2 / sum(spdf@data$points2 )
+      
+      # Calculate the errors 
+      
+      # Difference in the number of points
+      spdf@data$diff <- spdf@data$points1 - spdf@data$points2
+      
+      # Absolute difference
+      spdf@data$abs.diff <- abs(spdf@data$points1 - spdf@data$points2)
+      
+      # Absolute Difference in percentages
+      spdf@data$abs.pct.diff <- abs(spdf@data$p1.pct - spdf@data$p2.pct)
+      
+      # The Local S Index (slightly more convoluted)
+      s <- sppt(base_points.sp = points1, test_points.sp = points2, uoa.sp = spdf) # Calculate the index
+      
+      # Sanity check - check the sppt package calculates the same percentages as this code
+      stopifnot( identical(s$CELLID,spdf$CELLID) ) # Check the cells are in the same order (avoids having to merge on cell ID)
+      # XXXX For some reason the two methods aggregat the points very slightly differently. 
+      # Uncomment these below, debug, and do something like 'cbind(spdf$points1, s$NumBsePts)' to see the different counts
+      #stopifnot(identical(spdf$points1+spdf$points1, s$SumBseTstPts))
+      #stopifnot(identical(spdf@data$p1.pct, s$PctBsePts))
+      #stopifnot(identical(spdf@data$p2.pct, s$PctTstPts))
+      
+      # Useful Stats. associated with the S Index 
+      # (the whole S object is also returned later too, but these are more convenient to have direct access to)
+      spdf@data$localS            <- s@data$localS
+      spdf@data$localS.robust     <- s@data$localS.robust
+      spdf@data$similarity.robust <- s@data$similarity.robust
+      spdf@data$ConfLowP          <- s@data$ConfLowP
+      spdf@data$ConfUppP          <- s@data$ConfUppP
+      spdf@data$similarity        <- s@data$similarity
+      
+      # Store this result
+      results[[i]] <- spdf
+      
+      # Now calculte the global errors
+     
+      # RSS 
+      rss <- c(rss, sum( ( spdf@data$points1 - spdf@data$points2 )**2 ))
+      # R squared
+      r.squared <- c(r.squared, summary(lm(spdf@data$points1 ~ spdf@data$points2, data=spdf@data))$r.squared )
+      # RMSE
+      rmse <- c(rmse, rmse(spdf@data$points1, spdf@data$points2) )
+      # Global S Index (normal and robust). In globalS, each area has same value for global S, so take 1st row
+      # arbitrarily. For robust version, need to find the first row that isn't NA (hence use min()).
+      #. For
+      globalS <- c(globalS, s@data[1,"globalS"]        ) 
+      globalS.robust <- c(globalS.robust, s@data[min(which(!is.na(s@data$globalS.robust))),"globalS.robust"] )
+      
+      # Sometimes useful to keep a reference to the raw results returned by the sppt call (mostly for debugging)
+      s.object <- c(s.object, s)
+      
+    
+    } # for shifting grids (not currently used)
+    
+  } # for cell sizes
+  
+  # Delete the results that used one single large cell as these don't mean anything
+  results[[1]] <- NULL
+  num.cells <-      num.cells     [2:length(num.cells)]
+  cell.areas <-     cell.areas    [2:length(cell.areas)]
+  rss <-            rss           [2:length(rss)]
+  r.squared <-      r.squared     [2:length(r.squared)]
+  rmse <-           rmse          [2:length(rmse)]
+  globalS <-        globalS       [2:length(globalS)]
+  globalS.robust <- globalS.robust[2:length(globalS.robust)]
+  s.object <-       s.object      [2:length(s.object)]
+  
+  # Sanity check - global errors and other info should be vectors of the same length
+  stopifnot(
+    length(num.cells) == length(cell.areas) &
+    length(num.cells) == length(rss) &
+    length(num.cells) == length(r.squared) &
+    length(num.cells) == length(rmse) & 
+    length(num.cells) == length(globalS) & 
+    length(num.cells) == length(globalS.robust)
+  )
+
+  # Return the results
+  r <- list(
+    "results" = results,
+    "cell.areas" =cell.areas,
+    "num.cells" = num.cells,
+    "rss" = rss,
+    "r.squared" = r.squared,
+    "rmse" = rmse,
+    "globalS" = globalS,
+    "globalS.robust" = globalS.robust,
+    "s.object" = s.object
+  )
+  return(r)
+  
+} # function
+  
+```
+
+Now run the function.
+
+```{r runMSEA}
+r <- msea(base.data, test.data, N=50, ignore.zeros = TRUE)
+r.withzeros <- msea(base.data, test.data, N=50, ignore.zeros = FALSE) # for testing
+
+```
+
+# Results
+
+## Map total number of points
+
+For a sanity check: map the total number of base and test points for some different grids
+
+```{r map.totals }
+par(mfrow=c(2,4))
+
+#plot(results[[length(results)]])
+#points(base.data)
+for (i in 4:1) {
+  index <- round(length(r$results) / i )
+  choropleth(r$results[[index]], r$results[[index]]@data$points1, main=paste("PointsA",i), lty=0)
+}
+
+#plot(results[[length(results)]])
+#points(test.data)
+for (i in 4:1) {
+  index <- round(length(r$results) / i )
+  choropleth(r$results[[index]], r$results[[index]]@data$points2, main=paste("PointsB",i), lty=0)
+}
+```
+
+## Map the difference in proportions
+
+Map the difference in proportions for a few grids.
+
+```{r map.abs.prop.diff, fig.width=8, fig.height=6}
+statistic <- "abs.pct.diff" # The statistic to map
+
+par(mfrow=c(2,2))
+NCOL <- 9
+for (i in 4:1) {
+  index <- round(length(r$results) / i )
+  
+  s.breaks <- classIntervals(r$results[[index]]@data[,statistic], n = NCOL, style = 'pretty')$brks
+  s <- shading(s.breaks, cols=brewer.pal(length(s.breaks)+1,'RdYlGn') ) 
+  
+  choropleth(r$results[[index]], r$results[[index]]@data[,statistic], main=paste(statistic,i),
+             lty=0, shading = s)
+  choro.legend("topright", sh = s, cex=0.8)
+}
+```
+
+Also do a fuzzy map of the difference in proportions.
+
+```{r map.abs.prop.diff.fuzzy, fig.width=8, fig.height=8}
+par(mfrow=c(1,1))
+last.result <- r$results[[length(r$results)]] # Convenience for list result generated (the smallest grid)
+
+# Shading
+s.breaks <- classIntervals(last.result@data[,statistic], n = NCOL, style = 'pretty')$brks
+s         <- shading(s.breaks, cols=add.alpha(brewer.pal(length(s.breaks)+1,'RdYlGn'), (1/length(r$results))))
+s.noalpha <- shading(s.breaks, cols=          brewer.pal(length(s.breaks)+1,'RdYlGn') ) 
+
+choropleth(
+  last.result, last.result@data[,statistic], shading = s, main=paste0("Fuzzy ",statistic), lty=0
+  )
+
+for ( index in 1:(length(r$results)-1)) {
+  choropleth( r$results[[index]], r$results[[index]]@data[,statistic], shading = s, lty=0, add=TRUE )
+}
+
+# For the legend, redo the shading as above but without the alpha (don't want the legend colours to be transparent)
+
+choro.legend("topright", sh=s.noalpha)
+rm(statistic, NCOL)
+```
+
+## Map the Local S Index
+
+Map the Local S for a few grids.
+
+```{r map.globalS, fig.width=8, fig.height=6}
+statistic <- "localS" # The statistic to map
+
+par(mfrow=c(2,2))
+
+for (i in 4:1) {
+  index <- round(length(r$results) / i )
+  
+  # Create the shading manually
+  s <- list("breaks"=c(-0.5, 0, 0.5), "cols"=c("#fc8d59","#ffffbf", "#ffffbf","#99d594"))
+  
+  choropleth(r$results[[index]], r$results[[index]]@data[,statistic], main=paste(statistic,i),
+             lty=0, shading = s)
+  choro.legend("topright", sh = s, cex=0.8)
+}
+```
+
+Also do a fuzzy map of the difference in proportions.
+
+```{r map.globalS.fuzzy, fig.width=8, fig.height=8}
+par(mfrow=c(1,1))
+last.result <- r$results[[length(r$results)]] # Convenience for list result generated (the smallest grid)
+
+# Shading
+s.noalpha <- list("breaks"=c(-0.5, 0, 0.5), "cols"=c("#fc8d59","#ffffbf", "#ffffbf","#99d594"))
+s         <- list("breaks"=c(-0.5, 0, 0.5), 
+                  "cols"=add.alpha(c("#fc8d59","#ffffbf", "#ffffbf","#99d594"), (1/length(r$results))))
+
+choropleth(
+  last.result, last.result@data[,statistic], shading = s, main=paste0("Fuzzy ",statistic), lty=0
+  )
+
+for ( index in 1:(length(r$results)-1)) {
+  choropleth( r$results[[index]], r$results[[index]]@data[,statistic], shading = s, lty=0, add=TRUE )
+}
+
+# For the legend, redo the shading as above but without the alpha (don't want the legend colours to be transparent)
+
+choro.legend("topright", sh=s.noalpha)
+rm(statistic)
+```
+
+
+
+
+
+## Spatial Error Resolution
+
+Graph the differences using two difference _x_ axes:
+ 
+  - The number of cells used
+  - The square area of an individual cell (smallest cells first)
+
+```{r graphError, fig.width=9, fig.height=6 }
+
+# Go through all of the results and calculate errors
+
+par(mfrow=c(2,5))
+
+plot(x=r$num.cells, y=r$rss, type='o', main="RSS", xlab="Number of cells")
+plot(x=r$num.cells, y=r$r.squared, type='o', main="R-Squared", xlab="Number of cells")
+plot(x=r$num.cells, y=r$rmse, type='o', main="RMSE", xlab="Number of cells")
+plot(x=r$num.cells, y=r$globalS, type='o', main="Global S", xlab="Number of cells")
+plot(x=r$num.cells, y=r$globalS.robust, type='o', main="Global S (robust)", xlab="Number of cells")
+plot(x=rev(r$cell.areas), y=r$rss, type='o', main="RSS", xlab="Square area of a cell")
+plot(x=rev(r$cell.areas), y=r$r.squared, type='o', main="R-Squared", xlab="Square area of a cell")
+plot(x=rev(r$cell.areas), y=r$rmse, type='o', main="RMSE", xlab="Square area of a cell")
+plot(x=rev(r$cell.areas), y=r$globalS, type='o', main="Global S", xlab="Square area of a cell")
+plot(x=rev(r$cell.areas), y=r$globalS.robust, type='o', main="Global S (robust)", xlab="Square area of a cell")
+
+
+```
+
+Repeat the graphs, this time including zeros in the analysis
+
+```{r graphError-withzeros, fig.width=9, fig.height=6 }
+
+# Go through all of the results and calculate errors
+
+par(mfrow=c(2,5))
+
+tmp <- r # So I don't have to re-write all of the graph code
+r <- r.withzeros
+plot(x=r$num.cells, y=r$rss, type='o', main="RSS", xlab="Number of cells")
+plot(x=r$num.cells, y=r$r.squared, type='o', main="R-Squared", xlab="Number of cells")
+plot(x=r$num.cells, y=r$rmse, type='o', main="RMSE", xlab="Number of cells")
+plot(x=r$num.cells, y=r$globalS, type='o', main="Global S", xlab="Number of cells")
+plot(x=r$num.cells, y=r$globalS.robust, type='o', main="Global S (robust)", xlab="Number of cells")
+plot(x=rev(r$cell.areas), y=r$rss, type='o', main="RSS", xlab="Square area of a cell")
+plot(x=rev(r$cell.areas), y=r$r.squared, type='o', main="R-Squared", xlab="Square area of a cell")
+plot(x=rev(r$cell.areas), y=r$rmse, type='o', main="RMSE", xlab="Square area of a cell")
+plot(x=rev(r$cell.areas), y=r$globalS, type='o', main="Global S", xlab="Square area of a cell")
+plot(x=rev(r$cell.areas), y=r$globalS.robust, type='o', main="Global S (robust)", xlab="Square area of a cell")
+r <- tmp
+rm(tmp)
+```
+
+_What does this tell us?_
+
+
+_Could also do **Lorenze curves** at some of the resolutions (as per Eck's [review of crime concentrations](https://crimesciencejournal.springeropen.com/articles/10.1186/s40163-017-0070-4)).
+
+# Discussion
+
+XXXX
+
+# Conclusion
+
+XXXX
+
+
+
+
+# Other
+
+Save the results for mapping or whatever:
+
+```{r save.results, warning=FALSE }
+
+# The numbers used to make the graphs
+write.csv(data.frame("CellArea"=r$cell.areas, "NumCells"=r$num.cells, "RSS"=r$rss, "RSquared"=r$r.squared, "RMSE"=r$rmse), file = "ROUT/results.csv")
+
+# Delete old shapefiles
+
+files <- list.files(path = "./ROUT", pattern = "result_")
+for (f in files) {
+  file.remove(paste0("./ROUT/",f))
+}
+
+for (i in 1:length(r$results)) {
+  writeOGR(obj = r$results[[i]], dsn = "./ROUT", layer = paste0("result_",i), driver = "ESRI Shapefile")
+}
+
+
+```
+
