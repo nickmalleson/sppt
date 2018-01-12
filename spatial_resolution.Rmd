@@ -211,7 +211,12 @@ Split the big file up into different crimes and time periods
 
 ```{r subsetRawData, cache=TRUE}
 
-
+XXXX HERE THINK ABOUT BEST WAY TO ASSIGN SHORT CRIME TYPES. PROBABLY AT THE BEGINNING WHEN DATA REA READ IN - NEW COLUMN (to match MArtin's crime types)
+for (type in crime.types) {
+  
+  assign()
+  
+}
 
 ```
 
