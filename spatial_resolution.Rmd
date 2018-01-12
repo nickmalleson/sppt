@@ -99,6 +99,10 @@ library(classInt) # Jenks natural breaks
 #library(RColorBrewer) # For making nice colour themes
 library(hydroGOF)   # Has an rmse() function
 library(xtable)   # For making latex/html tables
+library(parallel) # For ruonning things in parallel (e.g. mclapply())
+no_cores <- detectCores() - 1 # Detect the number of cores that are available and use all but one
+Sys.setenv(MC_CORES=no_cores) # Run on n cores (I'm not sure which of these
+options("mc.cores"=no_cores) # is correct).
 
 
 library(sppt) # The spatial point pattern test library (see https://github.com/wsteenbeek/sppt for install instructions)
@@ -112,11 +116,7 @@ library(sppt) # The spatial point pattern test library (see https://github.com/w
 # Some Vancouver data:
 datasource <- "./data-raw/vancouver_all/"
 
-base.layer <- "points1" # THe name of the base dataset
-test.layer <- "points2" # THe name of the test dataset
 #areas.layer <- "areas"  # The polygon boundary file
-
-# multiprocess <- FALSE # Whether to run the simulation using multiple cores
 ```
  
 
@@ -164,6 +164,22 @@ all.crime <- readOGR(dsn="./crime_shp_all_years", layer = "crime_shp_all_years")
 unlink(zipfile)
 unlink("crime_shp_all_years", recursive = TRUE) # a left over directory
 
+# Assign short codes to crime types (the below throws an error about 'values must be length 1'
+# if there are any crime types that aren't matched to short equivalents)
+all.crime$TYPE2 <- as.factor(unlist(
+  mclapply(X = all.crime$TYPE, FUN = function(t) {
+    t2 <- switch(as.character(t),
+          "Break and Enter Commercial" = "BNEC", 
+          "Break and Enter Residential/Other" = "BNER",
+          "Mischief" = "MISCHIEF",
+          "Other Theft" = "OTHERTHEFT",
+          "Theft from Vehicle" = "TFV",
+          "Theft of Bicycle" = "TOB",
+          "Theft of Vehicle" = "TOV",
+          "Vehicle Collision or Pedestrian Struck (with Fatality)" = "COLFAT", 
+          "Vehicle Collision or Pedestrian Struck (with Injury)" = "COLINJ")
+})))
+  
 # Drop 2018 (not sufficient data yet)
 all.crime <- all.crime[which(all.crime$YEAR<2018),]
 
@@ -201,21 +217,21 @@ for ( i in 1:length(crime.types)) {
 rm(start, yval, type)
 ```
 
-For context, see how many there are in total
+For context, see how many there are in total (using short names of crimes)
 
-```{r allCrime-totals_graph, fig.width=9, fig.height=6 }
-barplot(rowSums(crime.table), horiz=TRUE, cex.names=0.5, las=1)
+```{r allCrime-totals_graph, fig.width=7, fig.height=4 }
+barplot(rowSums(table(all.crime$TYPE2, all.crime$YEAR)
+), horiz=TRUE, cex.names=0.8, las=1)
 ```
 
 Split the big file up into different crimes and time periods
 
 ```{r subsetRawData, cache=TRUE}
+# Shorter versions of the crime types
+crime.types2 <- unique(all.crime$TYPE2)
 
-XXXX HERE THINK ABOUT BEST WAY TO ASSIGN SHORT CRIME TYPES. PROBABLY AT THE BEGINNING WHEN DATA REA READ IN - NEW COLUMN (to match MArtin's crime types)
-for (type in crime.types) {
-  
-  assign()
-  
+for (type in crime.types2) {
+  assign(as.character(type), all.crime[all.crime$TYPE2==type,])
 }
 
 ```
@@ -460,12 +476,22 @@ msea <- function(points1, points2, N=20, ignore.zeros=FALSE) {
   
 ```
 
-Now run the function.
+Now run the function. Just use two years of burglary data for now
 
 ```{r runMSEA}
-r <- msea(base.data, test.data, N=50, ignore.zeros = TRUE)
-r.withzeros <- msea(base.data, test.data, N=50, ignore.zeros = FALSE) # for testing
+base.data <- BNER[BNER$YEAR==2016,]
+test.data <- BNER[BNER$YEAR==2015,]
 
+# Do for both with and without zeros, at the same time
+
+tmp <- mclapply(X = c(T,F), FUN = function(x) {
+  msea(base.data, test.data, N=50, ignore.zeros = x)
+})
+
+r <- tmp[[1]]
+r.withzeros <- tmp[[2]]
+
+rm(tmp)
 ```
 
 # Results
@@ -474,7 +500,7 @@ r.withzeros <- msea(base.data, test.data, N=50, ignore.zeros = FALSE) # for test
 
 For a sanity check: map the total number of base and test points for some different grids
 
-```{r map.totals }
+```{r map.totals , fig.width=9, fig.height=4}
 par(mfrow=c(2,4))
 
 #plot(results[[length(results)]])
@@ -496,11 +522,11 @@ for (i in 4:1) {
 
 Map the difference in proportions for a few grids.
 
-```{r map.abs.prop.diff, fig.width=8, fig.height=6}
+```{r map.abs.prop.diff,  fig.width=8, fig.height=6}
 statistic <- "abs.pct.diff" # The statistic to map
 
 par(mfrow=c(2,2))
-NCOL <- 9
+NCOL <- 7
 for (i in 4:1) {
   index <- round(length(r$results) / i )
   
@@ -511,11 +537,13 @@ for (i in 4:1) {
              lty=0, shading = s)
   choro.legend("topright", sh = s, cex=0.8)
 }
+rm(statistic)
 ```
 
 Also do a fuzzy map of the difference in proportions.
 
-```{r map.abs.prop.diff.fuzzy, fig.width=8, fig.height=8}
+```{r map.abs.prop.diff.fuzzy, fig.width=6, fig.height=5}
+statistic <- "abs.pct.diff" # The statistic to map
 par(mfrow=c(1,1))
 last.result <- r$results[[length(r$results)]] # Convenience for list result generated (the smallest grid)
 
@@ -534,8 +562,8 @@ for ( index in 1:(length(r$results)-1)) {
 
 # For the legend, redo the shading as above but without the alpha (don't want the legend colours to be transparent)
 
-choro.legend("topright", sh=s.noalpha)
-rm(statistic, NCOL)
+choro.legend("topright", sh=s.noalpha, cex=0.8)
+rm(statistic)
 ```
 
 ## Map the Local S Index
@@ -555,13 +583,13 @@ for (i in 4:1) {
   
   choropleth(r$results[[index]], r$results[[index]]@data[,statistic], main=paste(statistic,i),
              lty=0, shading = s)
-  choro.legend("topright", sh = s, cex=0.8)
+  choro.legend("topright", sh = s, cex=0.5)
 }
 ```
 
 Also do a fuzzy map of the difference in proportions.
 
-```{r map.globalS.fuzzy, fig.width=8, fig.height=8}
+```{r map.globalS.fuzzy, fig.width=6, fig.height=5}
 par(mfrow=c(1,1))
 last.result <- r$results[[length(r$results)]] # Convenience for list result generated (the smallest grid)
 
@@ -580,7 +608,7 @@ for ( index in 1:(length(r$results)-1)) {
 
 # For the legend, redo the shading as above but without the alpha (don't want the legend colours to be transparent)
 
-choro.legend("topright", sh=s.noalpha)
+choro.legend("topright", sh=s.noalpha, cex=0.8)
 rm(statistic)
 ```
 
