@@ -10,3 +10,5 @@ data-raw/vancouver_public/
 ROUT/*
 spatial_resolution_cache/
 spatial_resolution_files/
+figure/
+cache/

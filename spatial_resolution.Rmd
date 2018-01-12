@@ -76,9 +76,9 @@ src="http://www.geog.leeds.ac.uk/courses/other/programming/practicals/general/mo
 
 ## Configuration and library loading
 
-Configure the script here. (Un)comment or edit lines as appropriate to change the data used and the parameters for the method.
+Configure the script here. (Un)comment or edit lines as appropriate to change the data used and the parameters for the method. (_Note: R code not included in output_).
 
-```{r initialise, echo=FALSE, message=FALSE, warning=FALSE}
+```{r initialise, echo=FALSE, message=FALSE, warning=FALSE, include=FALSE}
 WORKING_DIR <- '~/research_not_syncd/git_projects/sppt/'
 setwd(WORKING_DIR)
 
@@ -94,7 +94,7 @@ library(classInt) # Jenks natural breaks
 #library(spdep)    # For doing the spatial regression, contiguity matrices, etc.
 #library(GWmodel)  # For geographically weighted regression (GWR)
 #library(MASS)     # For stepwise regression (stepAIC())
-#library(pander)   # For printing tables nicely
+#library(pander)    # For printing tables nicely
 #library(MVN)      # For testing for multivariate normality (MVN)
 #library(RColorBrewer) # For making nice colour themes
 library(hydroGOF)   # Has an rmse() function
@@ -103,7 +103,6 @@ library(parallel) # For ruonning things in parallel (e.g. mclapply())
 no_cores <- detectCores() - 1 # Detect the number of cores that are available and use all but one
 Sys.setenv(MC_CORES=no_cores) # Run on n cores (I'm not sure which of these
 options("mc.cores"=no_cores) # is correct).
-
 
 library(sppt) # The spatial point pattern test library (see https://github.com/wsteenbeek/sppt for install instructions)
 
@@ -188,7 +187,7 @@ rm(ZIPFILENAME)
 
 How many different crimes are there, by year:
 
-```{r allCrimeByYear-table, results=asis }
+```{r allCrimeByYear-table, results="asis" }
 print(xtable(table(all.crime$TYPE, all.crime$YEAR)), type="html")
 ```
 
@@ -245,9 +244,9 @@ The method works as follows:
  3. Shift the grids multiple times in N, E, S, W in order to reduce the impact of MAUP and calculate S-Index again
  4. Increase the resolution of the grid, and repeat
   
-The following defines a function that will run the method.
+The following defines a function that will run the method (_the R code has been hidden from the output because it is so long_).
 
-```{r defineMSEA}
+```{r defineMSEA, include=FALSE}
 
 #' Multi-Scale Error Assessment (MSEA).
 #'
@@ -258,6 +257,7 @@ The following defines a function that will run the method.
 #' @param points1 A set of points (a SpatialPointsDataFrame, or SpatialPoints object)
 #' @param points2 The set of points to compare against (another SpatialPointsDataFrame or SpatialPoints object)
 #' @param N The number of times to sub-divide the largest cell. I.e. if N=20 then the smallest grid at which error is calculated will be 20*20 cells. Note: the algorithm starts at i=2 which gives 2*2=4 cells as the most coarse resolution (doesn't make sense to calculate error for 1 data point)
+#' @param n.shifts The number of times to shift the grid at each resolution
 #' @param ignore.zeros Whether to remove cells with no crimes in them (the abundance of zeros at higher resolutions can distort the statistics)
 #'
 #' @return An list that encapsulates the results of the test as well as some other useful information:
@@ -304,7 +304,7 @@ The following defines a function that will run the method.
 #'
 #' @examples
 #' rmse(points1, points2)
-msea <- function(points1, points2, N=20, ignore.zeros=FALSE) {
+msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE) {
   
   # Check that the projections are the same
   if ( proj4string(points1) != proj4string(points2) ) {
@@ -334,18 +334,35 @@ msea <- function(points1, points2, N=20, ignore.zeros=FALSE) {
   # but it's easier to start from i=1 and delete that result afterwards
   for (i in seq(1,N)) {
     # Cell size is the total width divided by the number of cells to draw so far (i)
-    cell.width <- (bb[1,2] - bb[1,1]) / i
+    cell.width <-  (bb[1,2] - bb[1,1]) / i
     cell.height <- (bb[2,2] - bb[2,1]) / i
     cell.areas <- c(cell.areas, (cell.width * cell.height) ) # Also remember the cell area for later
     
-    # For each resolution, repeat a few times by slightly shifting each grid in N, E, S, W to lessen the impact of MAUP
-    # NOT IMPLEMENTED YET. SLIGHTLY TRICKY BECAUSE GRID WILL NEED TO BE BIGGER OTHERWISE SOME POINTS WILL NOT BE COVERED
-    for (shift in 1:1) {
+    # For each resolution, repeat a few times by slightly shifting the grid by a random amount in a random direction
+    for (shift in 1:n.shifts) {
+      # Make the bounding box slightly larger than necessary (by half a cell in each direction), 
+      # so when the grid is shifted there wont be any points outside
+      # It needs to be big enough so that it can have one extra ring of cells around it
+      bb2 <- bb # The new bounding box
+      bb2["coords.x1","min"] <- bb["coords.x1","min"] - ( cell.width / 2  ) # Min x gets smaller
+      bb2["coords.x2","min"] <- bb["coords.x2","min"] - ( cell.height / 2 ) # Min y gets smaller
+      bb2["coords.x1","max"] <- bb["coords.x1","max"] + ( cell.width / 2  ) # Max x gets larger
+      bb2["coords.x2","max"] <- bb["coords.x2","max"] + ( cell.height / 2 ) # Max y gets larger
+      
+      # Calculate the centre of the lower-left cell (the one with the smallest coordinates)
+      centre.x <- bb2[1,1] + ( cell.width / 2 )
+      centre.y <- bb2[2,1] + ( cell.height / 2 )
+      
+      # Chose random N-S and E-W directions to shift the grid in (using a random uniform distribution)
+      shift.x <- runif(n=1, min=-cell.width /2, max=cell.width /2 )
+      shift.y <- runif(n=1, min=-cell.height/2, max=cell.height/2)
+      
       # Need to calculate the centre of the bottom-right cell
-      if (shift==1) { # This is the grid with no shifting (i.e. it fits perfectly over the study area)
-        centre.x <- bb[1,1] + ( cell.width / 2 )
-        centre.y <- bb[2,1] + ( cell.height / 2 )
+      if (shift==1) { 
       }
+      
+      
+      
       # .. WILL IMPLEMENT REMAINING SHIFTS HERE
       
       # Create a grid  
@@ -684,6 +701,12 @@ XXXX
 
 
 # Other
+
+See if there were any warnings:
+
+```{r warnings }
+warnings()
+```
 
 Save the results for mapping or whatever:
 
