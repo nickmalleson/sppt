@@ -846,7 +846,7 @@ all <- list(data1, data2, data3, data4)
 # Do all at the same time. Include zeros.
 tmp <- mclapply(X = all, FUN = function(x) {
   msea(x[['base']], x[['test']], N=150, n.shifts=5, ignore.zeros = F, step=5)
-})
+}, mc.preschedule=FALSE)
 stopifnot(length(tmp)==4)
 # Store the results in the lists in an item called 'r'
 for (i in 1:length(tmp)) {
