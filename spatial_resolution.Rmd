@@ -226,11 +226,17 @@ barplot(rowSums(table(all.crime$TYPE2, all.crime$YEAR)
 Split the big file up into different crimes and time periods
 
 ```{r subsetRawData, cache=TRUE}
+# A directory for the crime data (in case it doesn't exist)
+dir.create(file.path("./ROUT", "crime"), showWarnings = FALSE)
+
 # Shorter versions of the crime types
 crime.types2 <- unique(all.crime$TYPE2)
 
 for (type in crime.types2) {
   assign(as.character(type), all.crime[all.crime$TYPE2==type,])
+  # Write them as well as they can be useful later
+  writeOGR(all.crime[all.crime$TYPE2==type,], dsn = "./ROUT/crime", layer = type, 
+           driver = "ESRI Shapefile", overwrite_layer = TRUE)
 }
 
 ```
@@ -256,9 +262,14 @@ The following defines a function that will run the method (_the R code has been 
 #' 
 #' @param points1 A set of points (a SpatialPointsDataFrame, or SpatialPoints object)
 #' @param points2 The set of points to compare against (another SpatialPointsDataFrame or SpatialPoints object)
-#' @param N The number of times to sub-divide the largest cell. I.e. if N=20 then the smallest grid at which error is calculated will be 20*20 cells. Note: the algorithm starts at i=2 which gives 2*2=4 cells as the most coarse resolution (doesn't make sense to calculate error for 1 data point)
+#' @param N The number of times to sub-divide the largest cell. I.e. if N=20 then the smallest grid at which 
+#'    error is calculated will be 20*20 cells. Note: the algorithm starts at i=2 which gives 2*2=4 cells as 
+#'    the most coarse resolution (doesn't make sense to calculate error for 1 data point)
 #' @param n.shifts The number of times to shift the grid at each resolution
 #' @param ignore.zeros Whether to remove cells with no crimes in them (the abundance of zeros at higher resolutions can distort the statistics)
+#' @param step The number of steps in between two resolutions before re-calculating the grid. Default 1, i.e. 
+#'    every sub-division between 1 and N will be calculated. If \code{step} were \code{2}, then only every
+#'    other grid resolution will actually be computed.
 #'
 #' @return An list that encapsulates the results of the test as well as some other useful information:
 #' 
@@ -296,6 +307,10 @@ The following defines a function that will run the method (_the R code has been 
 #'    ignores areas with no points (note that if \code{ignore.zeros} is \code[TRUE] then this is the
 #'    same as the \code{globalS})
 #' 
+#'  \code{iteration} - a vector of length N with the iteration number that this grid is part of
+#' 
+#'  \code{shift} - a vector of length N with the shift number of this grid (e.g. one of 1--10 if there
+#'    are ten shifts per iteration).
 #'
 #'
 #'  \code{s.object} - a vector of length N with the object returned by the call to \code{sppt} (used to 
@@ -304,11 +319,12 @@ The following defines a function that will run the method (_the R code has been 
 #'
 #' @examples
 #' rmse(points1, points2)
-msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE) {
+msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE, step=1) {
   
   # Check that the projections are the same
   if ( proj4string(points1) != proj4string(points2) ) {
     warning("The points1 and points2 projections are different, this will probably lead to catastrophic results!")
+    stop()
   }
     
   bb <- bbox(points1 + points1) # A bounding box around all points
@@ -328,51 +344,50 @@ msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE) {
   
   # Keep a link to the object that is returned from the call to sppt. Useful for debugging mostly.
   s.object <- c()
-
+  
+  # Remember the iteration and shift numbers (these are the i and j in the nested loops)
+  iteration <- c()
+  shift <- c()
+  
   # Create the grids - adapted from Brunsdon & Comber (2015, p150)
   # Note: will actually start at i=2 which gives 2*2=4 cells (doesn't make sense to calculate error for 1 data point)
   # but it's easier to start from i=1 and delete that result afterwards
-  for (i in seq(1,N)) {
+  for (i in seq(from=1,to=N,by=step)) {
     # Cell size is the total width divided by the number of cells to draw so far (i)
     cell.width <-  (bb[1,2] - bb[1,1]) / i
     cell.height <- (bb[2,2] - bb[2,1]) / i
-    cell.areas <- c(cell.areas, (cell.width * cell.height) ) # Also remember the cell area for later
+    
+    # Make the bounding box slightly larger than necessary (by half a cell in each direction), 
+    # so when the grid is shifted there wont be any points outside
+    # It needs to be big enough so that it can have one extra ring of cells around it
+    bb.larger <- bb # The new bounding box
+    bb.larger["coords.x1","min"] <- bb["coords.x1","min"] - ( cell.width / 2  ) # Min x gets smaller
+    bb.larger["coords.x2","min"] <- bb["coords.x2","min"] - ( cell.height / 2 ) # Min y gets smaller
+    bb.larger["coords.x1","max"] <- bb["coords.x1","max"] + ( cell.width / 2  ) # Max x gets larger
+    bb.larger["coords.x2","max"] <- bb["coords.x2","max"] + ( cell.height / 2 ) # Max y gets larger
     
     # For each resolution, repeat a few times by slightly shifting the grid by a random amount in a random direction
-    for (shift in 1:n.shifts) {
-      # Make the bounding box slightly larger than necessary (by half a cell in each direction), 
-      # so when the grid is shifted there wont be any points outside
-      # It needs to be big enough so that it can have one extra ring of cells around it
-      bb2 <- bb # The new bounding box
-      bb2["coords.x1","min"] <- bb["coords.x1","min"] - ( cell.width / 2  ) # Min x gets smaller
-      bb2["coords.x2","min"] <- bb["coords.x2","min"] - ( cell.height / 2 ) # Min y gets smaller
-      bb2["coords.x1","max"] <- bb["coords.x1","max"] + ( cell.width / 2  ) # Max x gets larger
-      bb2["coords.x2","max"] <- bb["coords.x2","max"] + ( cell.height / 2 ) # Max y gets larger
-      
-      # Calculate the centre of the lower-left cell (the one with the smallest coordinates)
-      centre.x <- bb2[1,1] + ( cell.width / 2 )
-      centre.y <- bb2[2,1] + ( cell.height / 2 )
-      
+    for (j in 1:n.shifts) {
+      # Remember the cell area (useful later) (needs to be repeated for each shift)
+      cell.areas <- c(cell.areas, (cell.width * cell.height) )
+
       # Chose random N-S and E-W directions to shift the grid in (using a random uniform distribution)
       shift.x <- runif(n=1, min=-cell.width /2, max=cell.width /2 )
       shift.y <- runif(n=1, min=-cell.height/2, max=cell.height/2)
       
-      # Need to calculate the centre of the bottom-right cell
-      if (shift==1) { 
-      }
-      
-      
-      
-      # .. WILL IMPLEMENT REMAINING SHIFTS HERE
+      # Calculate the centre of the lower-left cell (the one with the smallest coordinates),
+      # taking into account the shift
+      centre.x <- bb.larger[1,1] + ( cell.width  / 2 ) + shift.x
+      centre.y <- bb.larger[2,1] + ( cell.height / 2 ) + shift.y
       
       # Create a grid  
       grd <- GridTopology(
         cellcentre.offset = c(centre.x, centre.y), # No offset, the grid will just cover all the points
         cellsize = c(cell.width, cell.height),
-        cells.dim = c(i,i)
+        cells.dim = c(i+1,i+1)
       )
       
-      number.of.cells <- i * i
+      number.of.cells <- (i+1) * (i+1) # Add an extra row and column to account for shifting 
       num.cells <- c(num.cells, number.of.cells) # Remember the number of cells in this iteration
       
       # Convert the grid into a SpatialPolygonsDataFrame
@@ -390,7 +405,7 @@ msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE) {
       
       # Drop cells with 0 for both counts?
       if (ignore.zeros) {
-        spdf <- spdf[which(spdf@data$points1>0 & spdf@data$points2>0),]
+        spdf <- spdf[which(spdf@data$points1>0 | spdf@data$points2>0),]
         stopifnot( length(which(spdf@data$points1==0 & spdf@data$points2==0)) == 0 )
       }
       
@@ -430,7 +445,8 @@ msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE) {
       spdf@data$similarity        <- s@data$similarity
       
       # Store this result
-      results[[i]] <- spdf
+      grid.num <- ((i-1) * n.shifts) + j # Calculate total number of grids created so far
+      results[[ grid.num ]] <- spdf
       
       # Now calculte the global errors
      
@@ -449,10 +465,22 @@ msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE) {
       # Sometimes useful to keep a reference to the raw results returned by the sppt call (mostly for debugging)
       s.object <- c(s.object, s)
       
-    
-    } # for shifting grids (not currently used)
+      # Also useful to know which iteration number and grid shift this is (useful for naming grids)
+      iteration <- c(iteration, i)
+      shift <- c(shift, j)
+      
+    } # for shifting grids
     
   } # for cell sizes
+  
+  
+  
+  # TODO make parallel: I would need a function that used the outer loop index (i.e. each core will run each resolution)
+  # and returned a named list, with each of the components below included in the list. 
+  # Then the 'return the results' bit below can go through the results list, exrracting each component
+  # (an lapply) and combining them into single vectors
+  
+  
   
   # Delete the results that used one single large cell as these don't mean anything
   results[[1]] <- NULL
@@ -464,6 +492,8 @@ msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE) {
   globalS <-        globalS       [2:length(globalS)]
   globalS.robust <- globalS.robust[2:length(globalS.robust)]
   s.object <-       s.object      [2:length(s.object)]
+  iteration <-      iteration     [2:length(iteration)]
+  shift <-          shift         [2:length(shift)]
   
   # Sanity check - global errors and other info should be vectors of the same length
   stopifnot(
@@ -472,7 +502,10 @@ msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE) {
     length(num.cells) == length(r.squared) &
     length(num.cells) == length(rmse) & 
     length(num.cells) == length(globalS) & 
-    length(num.cells) == length(globalS.robust)
+    length(num.cells) == length(globalS.robust) &
+    length(num.cells) == length(s.object) &
+    length(num.cells) == length(iteration) &
+    length(num.cells) == length(shift)
   )
 
   # Return the results
@@ -485,7 +518,9 @@ msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE) {
     "rmse" = rmse,
     "globalS" = globalS,
     "globalS.robust" = globalS.robust,
-    "s.object" = s.object
+    "s.object" = s.object,
+    "iteration" = iteration,
+    "shift" = shift
   )
   return(r)
   
@@ -495,14 +530,16 @@ msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE) {
 
 Now run the function. Just use two years of burglary data for now
 
-```{r runMSEA}
-base.data <- BNER[BNER$YEAR==2016,]
-test.data <- BNER[BNER$YEAR==2015,]
+```{r runMSEA }
+base.data <- BNER[BNER$YEAR==2015,]
+test.data <- BNER[BNER$YEAR==2016,]
+
+#r <- msea(base.data, test.data, N=5, n.shifts = 2, ignore.zeros = TRUE)
 
 # Do for both with and without zeros, at the same time
 
 tmp <- mclapply(X = c(T,F), FUN = function(x) {
-  msea(base.data, test.data, N=50, ignore.zeros = x)
+  msea(base.data, test.data, N=150, n.shifts=5, ignore.zeros = x, step=2)
 })
 
 r <- tmp[[1]]
@@ -560,20 +597,30 @@ rm(statistic)
 Also do a fuzzy map of the difference in proportions.
 
 ```{r map.abs.prop.diff.fuzzy, fig.width=6, fig.height=5}
+# Maximum number of results we can map is 256 because transparency is represented by a two-digit hex
+# I actually set this as lower otherwise it doesn't work (all the colours add up to red)
+results.to.map <- NA
+if (length(r$results) > 50) {
+  results.to.map <- sample(x=1:length(r$results), size=50, replace = FALSE )
+  print("Only mapping 50 of all grids ")
+} else {
+  results.to.map <- 1:(length(r$results)-1)
+}
+
 statistic <- "abs.pct.diff" # The statistic to map
 par(mfrow=c(1,1))
 last.result <- r$results[[length(r$results)]] # Convenience for list result generated (the smallest grid)
 
 # Shading
 s.breaks <- classIntervals(last.result@data[,statistic], n = NCOL, style = 'pretty')$brks
-s         <- shading(s.breaks, cols=add.alpha(brewer.pal(length(s.breaks)+1,'RdYlGn'), (1/length(r$results))))
+s         <- shading(s.breaks, cols=add.alpha(brewer.pal(length(s.breaks)+1,'RdYlGn'), (1/length(results.to.map))))
 s.noalpha <- shading(s.breaks, cols=          brewer.pal(length(s.breaks)+1,'RdYlGn') ) 
 
 choropleth(
   last.result, last.result@data[,statistic], shading = s, main=paste0("Fuzzy ",statistic), lty=0
   )
 
-for ( index in 1:(length(r$results)-1)) {
+for ( index in results.to.map) {
   choropleth( r$results[[index]], r$results[[index]]@data[,statistic], shading = s, lty=0, add=TRUE )
 }
 
@@ -607,26 +654,35 @@ for (i in 4:1) {
 Also do a fuzzy map of the difference in proportions.
 
 ```{r map.globalS.fuzzy, fig.width=6, fig.height=5}
+# Maximum number of results we can map is 256 because transparency is represented by a two-digit hex
+# I actually set this as lower otherwise it doesn't work (all the colours add up to red)
+results.to.map <- NA
+if (length(r$results) > 50) {
+  results.to.map <- sample(x=1:length(r$results), size=50, replace = FALSE )
+  print("Only mapping 50 of all grids ")
+} else {
+  results.to.map <- 1:(length(r$results)-1)
+}
+
 par(mfrow=c(1,1))
 last.result <- r$results[[length(r$results)]] # Convenience for list result generated (the smallest grid)
 
 # Shading
 s.noalpha <- list("breaks"=c(-0.5, 0, 0.5), "cols"=c("#fc8d59","#ffffbf", "#ffffbf","#99d594"))
 s         <- list("breaks"=c(-0.5, 0, 0.5), 
-                  "cols"=add.alpha(c("#fc8d59","#ffffbf", "#ffffbf","#99d594"), (1/length(r$results))))
+                  "cols"=add.alpha(c("#fc8d59","#ffffbf", "#ffffbf","#99d594"), 1/length(results.to.map)))
 
 choropleth(
   last.result, last.result@data[,statistic], shading = s, main=paste0("Fuzzy ",statistic), lty=0
   )
 
-for ( index in 1:(length(r$results)-1)) {
+for ( index in results.to.map) {
   choropleth( r$results[[index]], r$results[[index]]@data[,statistic], shading = s, lty=0, add=TRUE )
 }
 
 # For the legend, redo the shading as above but without the alpha (don't want the legend colours to be transparent)
 
 choro.legend("topright", sh=s.noalpha, cex=0.8)
-rm(statistic)
 ```
 
 
@@ -640,52 +696,152 @@ Graph the differences using two difference _x_ axes:
   - The number of cells used
   - The square area of an individual cell (smallest cells first)
 
-```{r graphError, fig.width=9, fig.height=6 }
+Also do this for the results with and without zeros
+
+Note: _the data have been reversed for the square area of a cell graphs (so points with the smallest cells occur on the right of the graph), but the axis label hasn't been reversed so is wrong. (This will only matter for publication)_
+
+```{r graphError, fig.width=9, fig.height=15 }
 
 # Go through all of the results and calculate errors
 
-par(mfrow=c(2,5))
+par(mfrow=c(5,4))
 
-plot(x=r$num.cells, y=r$rss, type='o', main="RSS", xlab="Number of cells")
-plot(x=r$num.cells, y=r$r.squared, type='o', main="R-Squared", xlab="Number of cells")
-plot(x=r$num.cells, y=r$rmse, type='o', main="RMSE", xlab="Number of cells")
-plot(x=r$num.cells, y=r$globalS, type='o', main="Global S", xlab="Number of cells")
-plot(x=r$num.cells, y=r$globalS.robust, type='o', main="Global S (robust)", xlab="Number of cells")
-plot(x=rev(r$cell.areas), y=r$rss, type='o', main="RSS", xlab="Square area of a cell")
-plot(x=rev(r$cell.areas), y=r$r.squared, type='o', main="R-Squared", xlab="Square area of a cell")
-plot(x=rev(r$cell.areas), y=r$rmse, type='o', main="RMSE", xlab="Square area of a cell")
-plot(x=rev(r$cell.areas), y=r$globalS, type='o', main="Global S", xlab="Square area of a cell")
-plot(x=rev(r$cell.areas), y=r$globalS.robust, type='o', main="Global S (robust)", xlab="Square area of a cell")
+# RSS
+plot(x=r$num.cells, y=r$rss, type='o', main="RSS (no zeros)", xlab="Number of cells")
+plot(x=rev(r$cell.areas), y=r$rss, type='o', main="RSS (no zeros)", xlab="Square area of a cell")
+plot(x=r.withzeros$num.cells, y=r.withzeros$rss, type='o', main="RSS (with zeros)", xlab="Number of cells")
+plot(x=rev(r.withzeros$cell.areas), y=r.withzeros$rss, type='o', main="RSS (with zeros)", xlab="Square area of a cell")
+
+# RSquared
+plot(x=r$num.cells, y=r$r.squared, type='o', main="R-Squared (no zeros)", xlab="Number of cells")
+plot(x=rev(r$cell.areas), y=r$r.squared, type='o', main="R-Squared (no zeros)", xlab="Square area of a cell")
+plot(x=r.withzeros$num.cells, y=r.withzeros$r.squared, type='o', main="R-Squared (with zeros)", xlab="Number of cells")
+plot(x=rev(r.withzeros$cell.areas), y=r.withzeros$r.squared, type='o', main="R-Squared (with zeros)", xlab="Square area of a cell")
+
+# RMSE
+plot(x=r$num.cells, y=r$rmse, type='o', main="RMSE (no zeros)", xlab="Number of cells")
+plot(x=rev(r$cell.areas), y=r$rmse, type='o', main="RMSE (no zeros)", xlab="Square area of a cell")
+plot(x=r.withzeros$num.cells, y=r.withzeros$rmse, type='o', main="RMSE (with zeros)", xlab="Number of cells")
+plot(x=rev(r.withzeros$cell.areas), y=r.withzeros$rmse, type='o', main="RMSE (with zeros)", xlab="Square area of a cell")
+
+# Global S
+plot(x=r$num.cells, y=r$globalS, type='o', main="Global S (no zeros)", xlab="Number of cells")
+plot(x=rev(r$cell.areas), y=r$globalS, type='o', main="Global S (no zeros)", xlab="Square area of a cell")
+plot(x=r.withzeros$num.cells, y=r.withzeros$globalS, type='o', main="Global S (with zeros)", xlab="Number of cells")
+plot(x=rev(r.withzeros$cell.areas), y=r.withzeros$globalS, type='o', main="Global S (with zeros)", xlab="Square area of a cell")
+
+# Global S (Robust)
+plot(x=r$num.cells, y=r$globalS.robust, type='o', main="Global S (robust)\n(no zeros)", xlab="Number of cells")
+plot(x=rev(r$cell.areas), y=r$globalS.robust, type='o', main="Global S (robust)\n(no zeros)", xlab="Square area of a cell")
+plot(x=r.withzeros$num.cells, y=r.withzeros$globalS.robust, type='o', main="Global S (robust)\n(with zeros)", xlab="Number of cells")
+plot(x=rev(r.withzeros$cell.areas), y=r.withzeros$globalS.robust, type='o', main="Global S (robust)\n(with zeros)", xlab="Square area of a cell")
 
 
 ```
 
-Repeat the graphs, this time including zeros in the analysis
+**TODO: discuss these results. Why do RSS and RMSE decrese? Errors should increase?**
 
-```{r graphError-withzeros, fig.width=9, fig.height=6 }
+Now estimate a quadratic model that represents the change in S Index. Later this will be differentiated to calculate the point at which the gradient is 45 degrees.
 
-# Go through all of the results and calculate errors
+_Good information about fitting polynomials in R_ [here](https://www.r-bloggers.com/fitting-polynomial-regression-in-r/).
 
-par(mfrow=c(2,5))
+```{r s.model, fig.width=9, fig.height=7 }
+par(mfrow=c(2,4))
+DEGREE <- 2
+USE.LM = TRUE # Whether to use lm or loess
 
-tmp <- r # So I don't have to re-write all of the graph code
-r <- r.withzeros
-plot(x=r$num.cells, y=r$rss, type='o', main="RSS", xlab="Number of cells")
-plot(x=r$num.cells, y=r$r.squared, type='o', main="R-Squared", xlab="Number of cells")
-plot(x=r$num.cells, y=r$rmse, type='o', main="RMSE", xlab="Number of cells")
-plot(x=r$num.cells, y=r$globalS, type='o', main="Global S", xlab="Number of cells")
-plot(x=r$num.cells, y=r$globalS.robust, type='o', main="Global S (robust)", xlab="Number of cells")
-plot(x=rev(r$cell.areas), y=r$rss, type='o', main="RSS", xlab="Square area of a cell")
-plot(x=rev(r$cell.areas), y=r$r.squared, type='o', main="R-Squared", xlab="Square area of a cell")
-plot(x=rev(r$cell.areas), y=r$rmse, type='o', main="RMSE", xlab="Square area of a cell")
-plot(x=rev(r$cell.areas), y=r$globalS, type='o', main="Global S", xlab="Square area of a cell")
-plot(x=rev(r$cell.areas), y=r$globalS.robust, type='o', main="Global S (robust)", xlab="Square area of a cell")
-r <- tmp
-rm(tmp)
+# Num cells 1
+x <- r.withzeros$num.cells[1:length(r$num.cells)]
+y <- r.withzeros$globalS.robust[1:length(r$num.cells)]
+lo <- if (USE.LM) lo <- lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
+plot(x,y, main="NumCells (Robust)" )
+lines(x=x, y=predict(lo), col='red', lwd=2)
+
+# Num cells 2
+x <- r.withzeros$num.cells[100:length(r$num.cells)]
+y <- r.withzeros$globalS.robust[100:length(r$num.cells)]
+lo <- if (USE.LM) lo <- lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
+plot(x,y, main="NumCells (Robust)")
+lines(x=x, y=predict(lo), col='red', lwd=2)
+
+# Area 1
+x <- r.withzeros$cell.areas[1:length(r$num.cells)]
+y <- r.withzeros$globalS.robust[1:length(r$num.cells)]
+lo <- if (USE.LM) lo <- lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
+plot(x,y, main="cell areas (Robust)")
+lines(x=x, y=predict(lo), col='red', lwd=2)
+
+# Area 2
+x <- r.withzeros$cell.areas[100:length(r$num.cells)]
+y <- r.withzeros$globalS.robust[100:length(r$num.cells)]
+lo <- if (USE.LM) lo <- lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
+plot(x,y , main="cell areas (Robust)")
+lines(x=x, y=predict(lo), col='red', lwd=2)
+
+
+
+# Num cells 1
+x <- r$num.cells[1:length(r$num.cells)]
+y <- r$globalS.robust[1:length(r$num.cells)]
+lo <- if (USE.LM) lo <- lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
+plot(x,y, main="NumCells (Normal)" )
+lines(x=x, y=predict(lo), col='red', lwd=2)
+
+# Num cells 2
+x <- r$num.cells[100:length(r$num.cells)]
+y <- r$globalS.robust[100:length(r$num.cells)]
+lo <- if (USE.LM) lo <- lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
+plot(x,y, main="NumCells (Normal)")
+lines(x=x, y=predict(lo), col='red', lwd=2)
+
+# Area 1
+x <- r$cell.areas[1:length(r$num.cells)]
+y <- r$globalS.robust[1:length(r$num.cells)]
+lo <- if (USE.LM) lo <- lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
+plot(x,y, main="cell areas (Normal)")
+lines(x=x, y=predict(lo), col='red', lwd=2)
+
+# Area 2
+x <- r$cell.areas[100:length(r$num.cells)]
+y <- r$globalS.robust[100:length(r$num.cells)]
+lo <- if (USE.LM) lo <- lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
+plot(x,y , main="cell areas (Normal)")
+lines(x=x, y=predict(lo), col='red', lwd=2)
 ```
+
 
 _What does this tell us?_
 
+
+
+TESTING
+
+```{r }
+par(mfrow=c(1,2))
+#x <- r$num.cells[1:length(r$num.cells)]
+#y <- r$globalS.robust[1:length(r$num.cells)]
+
+#x <- r.withzeros$cell.areas[100:length(r$num.cells)]
+#y <- r.withzeros$globalS.robust[100:length(r$num.cells)]
+
+x <- r$num.cells[100:length(r$num.cells)]
+y <- r$globalS.robust[100:length(r$num.cells)]
+
+lo <- lm(y ~ x + I(x^2) )
+
+
+plot(x,y, main="NumCells (Normal)" )
+lines(x=x, y=predict(lo), col='red', lwd=2)
+
+# Calculate gradient at each x
+testfun <- function(x) coef(lo)[1] + (coef(lo)[2]*x) + (coef(lo)[3]*(x^2))
+stopifnot(! (FALSE %in% predict(lo) == testfun(x)))
+d <- Deriv( f = testfun, x="x" )
+gradients <- vapply(X = x, FUN=d, FUN.VALUE = numeric(1))
+#testfun <- function(x) x + x^2
+plot(x=x, y=gradients)
+
+```
 
 _Could also do **Lorenze curves** at some of the resolutions (as per Eck's [review of crime concentrations](https://crimesciencejournal.springeropen.com/articles/10.1186/s40163-017-0070-4)).
 
@@ -711,9 +867,14 @@ warnings()
 Save the results for mapping or whatever:
 
 ```{r save.results, warning=FALSE }
+# All of the R objects. Makes it easy to re-read the results
+save.image("spatial_resolution.RData")
 
 # The numbers used to make the graphs
-write.csv(data.frame("CellArea"=r$cell.areas, "NumCells"=r$num.cells, "RSS"=r$rss, "RSquared"=r$r.squared, "RMSE"=r$rmse), file = "ROUT/results.csv")
+write.csv(
+  data.frame("CellArea"=r$cell.areas, "NumCells"=r$num.cells, "RSS"=r$rss, "RSquared"=r$r.squared, "RMSE"=r$rmse,
+             "GlobalS" = r$globalS, "GlobalSRobust" = r$globalS.robust), 
+  file = "ROUT/results.csv")
 
 # Delete old shapefiles
 
@@ -722,8 +883,13 @@ for (f in files) {
   file.remove(paste0("./ROUT/",f))
 }
 
-for (i in 1:length(r$results)) {
-  writeOGR(obj = r$results[[i]], dsn = "./ROUT", layer = paste0("result_",i), driver = "ESRI Shapefile")
+# Write new ones, using the i and j counters from the nested loops to name the files
+for (x in 1:length(r$results)) {
+  res <- r$results[[x]]
+  i <- r$iteration[x]
+  j <- r$shift[x]
+  writeOGR(obj = res, dsn = "./ROUT", layer = paste0("result_",i,"_",j), 
+           driver = "ESRI Shapefile", overwrite_layer = TRUE)
 }
 
 
