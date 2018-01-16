@@ -752,18 +752,19 @@ Now estimate a quadratic model that represents the change in S Index. Later this
 
 _Good information about fitting polynomials in R_ [here](https://www.r-bloggers.com/fitting-polynomial-regression-in-r/).
 
-```{r s.model, fig.width=9, fig.height=7 }
+```{r s.model, fig.width=9, fig.height=6 }
 par(mfrow=c(2,4))
 
-START <- 20 # Sometimes ignore first few grids
+START <- 1 # Sometimes ignore first few grids
+END <- length(r$cell.areas)
 
 FORM <- y ~ x + I(x^2) + I(x^3)
 
 # Calculate the gradient of a model, m, at each point, x (assumes m is a polynomial)
 calc.gradients <- function(m, x) {
-  f <- function(x) coef(m)[1] + (coef(m)[2]*x) + (coef(m)[3]*(x^2))
+  f <- function(x) coef(m)[1] + (coef(m)[2]*x) + (coef(m)[3]*(x^2)) #+ (coef(m)[4]*(x^3)) 
   stopifnot(! (FALSE %in% predict(m) == f(x))) # Check function has been specified correctly
-  d <- Deriv( f = f, x="x" ) # Calculate the derivitives
+  d <- Deriv( f = f, x="x", nderiv = 1 ) # Calculate the second derivitive
   gradients <- vapply(X = x, FUN=d, FUN.VALUE = numeric(1))
   return(gradients)
 }
@@ -775,25 +776,28 @@ make.gradient.plot <- function(x, y, form, main="") {
   gradients <- calc.gradients(m,x)
   lines(abline(v=x[which.min(abs(gradients - 0))], col="blue", lty=2)) # Point at which the gradient is closest to 0
   lines(abline(h=y[which.min(abs(gradients - 0))], col="blue", lty=2))
+  # Can show the gradient on the same chart (useful for debugging)
+  points(x=x, y=((gradients*1000)+0.3), col=sapply(X=gradients, FUN=function(z) if(z>0) "blue" else "red"))
+  #print(gradients)
 }
 
 
 # START BY INCLUDING ZEROS
 
-make.gradient.plot( x=r.withzeros$num.cells, 
-                    y=r.withzeros$globalS.robust,
+make.gradient.plot( x=r.withzeros$num.cells[START:END], 
+                    y=r.withzeros$globalS.robust[START:END],
   form=FORM, main = "NumCells : Robust :\nZeros" )
 
-make.gradient.plot( x=r.withzeros$num.cells, 
-                    y=r.withzeros$globalS,
+make.gradient.plot( x=r.withzeros$num.cells[START:END], 
+                    y=r.withzeros$globalS[START:END],
   form=FORM, main = "NumCells : Normal :\nZeros" )
 
-make.gradient.plot( x=r.withzeros$cell.areas, 
-                    y=r.withzeros$globalS.robust,
+make.gradient.plot( x=r.withzeros$cell.areas[START:END], 
+                    y=r.withzeros$globalS.robust[START:END],
   form=FORM, main = "CellAreas : Robust :\nZeros" )
 
-make.gradient.plot( x=r.withzeros$cell.areas, 
-                    y=r.withzeros$globalS,
+make.gradient.plot( x=r.withzeros$cell.areas[START:END], 
+                    y=r.withzeros$globalS[START:END],
   form=FORM, main = "CellAreas : Normal :\nZeros" )
 
 
@@ -802,24 +806,30 @@ make.gradient.plot( x=r.withzeros$cell.areas,
 # NOW EXCLUDE ZEROS
 
 
-make.gradient.plot( x=r$num.cells, 
-                    y=r$globalS.robust,
+make.gradient.plot( x=r$num.cells[START:END], 
+                    y=r$globalS.robust[START:END],
   form=FORM, main = "NumCells : Robust :\nNo Zeros" )
 
-make.gradient.plot( x=r$num.cells, 
-                    y=r$globalS,
+make.gradient.plot( x=r$num.cells[START:END], 
+                    y=r$globalS[START:END],
   form=FORM, main = "NumCells : Normal :\nNo Zeros" )
 
-make.gradient.plot( x=r$cell.areas, 
-                    y=r$globalS.robust,
+make.gradient.plot( x=r$cell.areas[START:END], 
+                    y=r$globalS.robust[START:END],
   form=FORM, main = "CellAreas : Robust :\nNo Zeros" )
 
-make.gradient.plot( x=r$cell.areas, 
-                    y=r$globalS,
+make.gradient.plot( x=r$cell.areas[START:END], 
+                    y=r$globalS[START:END],
   form=FORM, main = "CellAreas : Normal :\nNo Zeros" )
 
 
 ```
+
+
+XXXX - check with Martin what is happenning here.
+
+The best results seem to be when we use a function with degree 3 to define the curve, but then disregard the x^3 term when calculating the gradient.
+
 
 Repeat above, but this time look at the spatial error resolution of a few different crime types
 
