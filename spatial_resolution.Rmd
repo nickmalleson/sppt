@@ -103,6 +103,7 @@ library(parallel) # For ruonning things in parallel (e.g. mclapply())
 no_cores <- detectCores() - 1 # Detect the number of cores that are available and use all but one
 Sys.setenv(MC_CORES=no_cores) # Run on n cores (I'm not sure which of these
 options("mc.cores"=no_cores) # is correct).
+library(Deriv)   # For calculating deriviatives
 
 library(sppt) # The spatial point pattern test library (see https://github.com/wsteenbeek/sppt for install instructions)
 
@@ -534,18 +535,18 @@ Now run the function. Just use two years of burglary data for now
 base.data <- BNER[BNER$YEAR==2015,]
 test.data <- BNER[BNER$YEAR==2016,]
 
-#r <- msea(base.data, test.data, N=5, n.shifts = 2, ignore.zeros = TRUE)
+#r <- msea(base.data, test.data, N=5, n.shifts = 2, ignore.zeros = FALSE)
+
+r <-           msea(base.data, test.data, N=120, n.shifts=5, ignore.zeros = T, step=2)
+r.withzeros <- msea(base.data, test.data, N=120, n.shifts=5, ignore.zeros = F, step=2)
 
 # Do for both with and without zeros, at the same time
-
-tmp <- mclapply(X = c(T,F), FUN = function(x) {
-  msea(base.data, test.data, N=150, n.shifts=5, ignore.zeros = x, step=2)
-})
-
-r <- tmp[[1]]
-r.withzeros <- tmp[[2]]
-
-rm(tmp)
+#tmp <- mclapply(X = c(T,F), FUN = function(x) {
+#  msea(base.data, test.data, N=150, n.shifts=5, ignore.zeros = x, step=2)
+#})
+#r <- tmp[[1]]
+#r.withzeros <- tmp[[2]]
+#rm(tmp)
 ```
 
 # Results
@@ -750,63 +751,97 @@ par(mfrow=c(2,4))
 DEGREE <- 2
 USE.LM = TRUE # Whether to use lm or loess
 
+# Calculate the gradient of a model, m, at each point, x (assumes m is a polynomial)
+calc.gradients <- function(m, x) {
+  f <- function(x) coef(m)[1] + (coef(m)[2]*x) + (coef(m)[3]*(x^2))
+  stopifnot(! (FALSE %in% predict(m) == f(x))) # Check function has been specified correctly
+  d <- Deriv( f = testfun, x="x" ) # Calculate the derivitives
+  gradients <- vapply(X = x, FUN=d, FUN.VALUE = numeric(1))
+  return(gradients)
+}
+
+
+
 # Num cells 1
 x <- r.withzeros$num.cells[1:length(r$num.cells)]
 y <- r.withzeros$globalS.robust[1:length(r$num.cells)]
-lo <- if (USE.LM) lo <- lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
+lo <- if (USE.LM) lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
 plot(x,y, main="NumCells (Robust)" )
 lines(x=x, y=predict(lo), col='red', lwd=2)
+gradients <- calc.gradients(lo,x)
+lines(abline(v=x[which.min(abs(gradients - mean(gradients)))], col="red", lty=2)) # Mean gradient
+lines(abline(v=x[which.min(abs(gradients - median(gradients)))], col="blue", lty=2)) # Median
+
 
 # Num cells 2
 x <- r.withzeros$num.cells[100:length(r$num.cells)]
 y <- r.withzeros$globalS.robust[100:length(r$num.cells)]
-lo <- if (USE.LM) lo <- lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
+lo <- if (USE.LM) lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
 plot(x,y, main="NumCells (Robust)")
 lines(x=x, y=predict(lo), col='red', lwd=2)
+gradients <- calc.gradients(lo,x)
+lines(abline(v=x[which.min(abs(gradients - mean(gradients)))], col="red", lty=2)) # Mean gradient
+lines(abline(v=x[which.min(abs(gradients - median(gradients)))], col="blue", lty=2)) # Median
 
 # Area 1
 x <- r.withzeros$cell.areas[1:length(r$num.cells)]
 y <- r.withzeros$globalS.robust[1:length(r$num.cells)]
-lo <- if (USE.LM) lo <- lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
+lo <- if (USE.LM) lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
 plot(x,y, main="cell areas (Robust)")
 lines(x=x, y=predict(lo), col='red', lwd=2)
+gradients <- calc.gradients(lo,x)
+lines(abline(v=x[which.min(abs(gradients - mean(gradients)))], col="red", lty=2)) # Mean gradient
+lines(abline(v=x[which.min(abs(gradients - median(gradients)))], col="blue", lty=2)) # Median
 
 # Area 2
 x <- r.withzeros$cell.areas[100:length(r$num.cells)]
 y <- r.withzeros$globalS.robust[100:length(r$num.cells)]
-lo <- if (USE.LM) lo <- lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
+lo <- if (USE.LM) lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
 plot(x,y , main="cell areas (Robust)")
 lines(x=x, y=predict(lo), col='red', lwd=2)
-
-
+gradients <- calc.gradients(lo,x)
+lines(abline(v=x[which.min(abs(gradients - mean(gradients)))], col="red", lty=2)) # Mean gradient
+lines(abline(v=x[which.min(abs(gradients - median(gradients)))], col="blue", lty=2)) # Median
 
 # Num cells 1
 x <- r$num.cells[1:length(r$num.cells)]
 y <- r$globalS.robust[1:length(r$num.cells)]
-lo <- if (USE.LM) lo <- lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
+lo <- if (USE.LM) lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
 plot(x,y, main="NumCells (Normal)" )
 lines(x=x, y=predict(lo), col='red', lwd=2)
+gradients <- calc.gradients(lo,x)
+lines(abline(v=x[which.min(abs(gradients - mean(gradients)))], col="red", lty=2)) # Mean gradient
+lines(abline(v=x[which.min(abs(gradients - median(gradients)))], col="blue", lty=2)) # Median
 
 # Num cells 2
 x <- r$num.cells[100:length(r$num.cells)]
 y <- r$globalS.robust[100:length(r$num.cells)]
-lo <- if (USE.LM) lo <- lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
+lo <- if (USE.LM) lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
 plot(x,y, main="NumCells (Normal)")
 lines(x=x, y=predict(lo), col='red', lwd=2)
+gradients <- calc.gradients(lo,x)
+lines(abline(v=x[which.min(abs(gradients - mean(gradients)))], col="red", lty=2)) # Mean gradient
+lines(abline(v=x[which.min(abs(gradients - median(gradients)))], col="blue", lty=2)) # Median
 
 # Area 1
 x <- r$cell.areas[1:length(r$num.cells)]
 y <- r$globalS.robust[1:length(r$num.cells)]
-lo <- if (USE.LM) lo <- lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
+lo <- if (USE.LM) lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
 plot(x,y, main="cell areas (Normal)")
 lines(x=x, y=predict(lo), col='red', lwd=2)
+gradients <- calc.gradients(lo,x)
+lines(abline(v=x[which.min(abs(gradients - mean(gradients)))], col="red", lty=2)) # Mean gradient
+lines(abline(v=x[which.min(abs(gradients - median(gradients)))], col="blue", lty=2)) # Median
 
 # Area 2
 x <- r$cell.areas[100:length(r$num.cells)]
 y <- r$globalS.robust[100:length(r$num.cells)]
-lo <- if (USE.LM) lo <- lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
+lo <- if (USE.LM) lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
 plot(x,y , main="cell areas (Normal)")
 lines(x=x, y=predict(lo), col='red', lwd=2)
+gradients <- calc.gradients(lo,x)
+lines(abline(v=x[which.min(abs(gradients - mean(gradients)))], col="red", lty=2)) # Mean gradient
+lines(abline(v=x[which.min(abs(gradients - median(gradients)))], col="blue", lty=2)) # Median
 ```
 
 
@@ -833,11 +868,13 @@ lo <- lm(y ~ x + I(x^2) )
 plot(x,y, main="NumCells (Normal)" )
 lines(x=x, y=predict(lo), col='red', lwd=2)
 
-# Calculate gradient at each x
-testfun <- function(x) coef(lo)[1] + (coef(lo)[2]*x) + (coef(lo)[3]*(x^2))
-stopifnot(! (FALSE %in% predict(lo) == testfun(x)))
-d <- Deriv( f = testfun, x="x" )
-gradients <- vapply(X = x, FUN=d, FUN.VALUE = numeric(1))
+
+
+
+# Find the x value with the optimal gradient
+
+lines(abline(v=x[which.min(abs(gradients - mean(gradients)))], col="red", lty=2))
+
 #testfun <- function(x) x + x^2
 plot(x=x, y=gradients)
 
