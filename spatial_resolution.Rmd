@@ -79,7 +79,7 @@ src="http://www.geog.leeds.ac.uk/courses/other/programming/practicals/general/mo
 Configure the script here. (Un)comment or edit lines as appropriate to change the data used and the parameters for the method. (_Note: R code not included in output_).
 
 ```{r initialise, echo=FALSE, message=FALSE, warning=FALSE, include=FALSE}
-WORKING_DIR <- '~/research_not_syncd/git_projects/sppt/'
+WORKING_DIR <- '~/mapping/projects/sppt/'
 setwd(WORKING_DIR)
 
 library(GISTools)
@@ -536,7 +536,7 @@ msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE, step
 
 Now run the function. Just use two years of burglary data for now
 
-```{r runMSEA }
+```{r runMSEA, cache=TRUE }
 base.data <- BNER[BNER$YEAR==2015,]
 test.data <- BNER[BNER$YEAR==2016,]
 
@@ -826,10 +826,10 @@ make.gradient.plot( x=r$cell.areas[START:END],
 ```
 
 
-XXXX - check with Martin what is happenning here.
+_XXXX - check with Martin what is happenning here._
+_The best results seem to be when we use a function with degree 3 to define the curve, but then disregard the x^3 term when calculating the gradient._
 
-The best results seem to be when we use a function with degree 3 to define the curve, but then disregard the x^3 term when calculating the gradient.
-
+Interestingly the graphs with number of cells on the x axis all reach their elbow at the same resolution, albeit with different `globalS` values, regardless of the choice of statistic (normal or robust) or the inclusion (or not) of cells with no crimes in.
 
 Repeat above, but this time look at the spatial error resolution of a few different crime types
 
@@ -842,62 +842,253 @@ data2 <- list("base" = BNEC[BNEC$YEAR==2015,], "test"= BNEC[BNEC$YEAR==2016,], n
 data3 <- list("base" = TFV[TFV$YEAR==2015,], "test"= TFV[TFV$YEAR==2016,], name="TFV")
 data4 <- list("base" = TOB[TOB$YEAR==2015,], "test"= TOB[TOB$YEAR==2016,], name="TOB")
 all <- list(data1, data2, data3, data4)
+rm(data1, data2, data3, data4)
 
 # Do all at the same time. Include zeros.
 tmp <- mclapply(X = all, FUN = function(x) {
+  #msea(x[['base']], x[['test']], N=10, n.shifts=1, ignore.zeros = F, step=1)
   msea(x[['base']], x[['test']], N=150, n.shifts=5, ignore.zeros = F, step=5)
 }, mc.preschedule=FALSE)
 stopifnot(length(tmp)==4)
 # Store the results in the lists in an item called 'r'
 for (i in 1:length(tmp)) {
-  all[[i]]['r'] <- tmp[[i]]
+  all[[i]][['r']] <- tmp[[i]]
 }
-
 #rm(tmp)
 ```
+
+Now graph the change in local S index for each crime type.)
+
+```{r s.model-all, fig.width=9, fig.height=6}
+par(mfrow=c(length(all)/2,4))
+FORM <- y ~ x + I(x^2) + I(x^3) # Cubic formula to fit to change in S index
+
+for (a in all) {
+  r <- a$r # This is the results of the msea test
+  name <- a$name # This is the name of the crime type
+  base <- a$base # Base and test points (not actually needed here)
+  test <- a$test
+  
+  # This code to graph and calculate gradients came from the 's.model' chunk.
+  # I've expanded the functions here to make it easier to play around with
+  
+  col1 <- "#d8b365"
+  col2 <- "#5ab4ac"
+  
+  x =        r$num.cells
+  y.robust = r$globalS.robust
+  y.normal = r$globalS
+  
+  # Plot points
+  plot(  x, y.normal, main=name, pch=1, ylim=c(0,1), col=col1, 
+         xlab="Number of Cells", ylab="Global S Index")
+  points(x, y.robust, pch=2, col=col2)
+  
+  # Calculate model for points using FORM
+  m.normal <- lm( FORM, data=list("x"=x, "y"=y.normal) ) 
+  m.robust <- lm( FORM, data=list("x"=x, "y"=y.robust) ) 
+  lines(x=x, y=predict(m.normal), col="red", lwd=2)
+  lines(x=x, y=predict(m.robust), col="red", lwd=2)
+  
+  # Calculate gradients
+  
+  # Function to differentiate. Do two versions - the proper version, and one where we ignore the cubic term
+  FUNC.normal1 <- function(x) 
+    coef(m.normal)[1] + (coef(m.normal)[2]*x) + (coef(m.normal)[3]*(x^2)) + (coef(m.normal)[4]*(x^3)) 
+  FUNC.robust1 <- function(x) 
+    coef(m.robust)[1] + (coef(m.robust)[2]*x) + (coef(m.robust)[3]*(x^2)) + (coef(m.robust)[4]*(x^3)) 
+  FUNC.normal2 <- function(x) coef(m.normal)[1] + (coef(m.normal)[2]*x) + (coef(m.normal)[3]*(x^2))
+  FUNC.robust2 <- function(x) coef(m.robust)[1] + (coef(m.robust)[2]*x) + (coef(m.robust)[3]*(x^2))
+  
+  stopifnot(! (FALSE %in% (predict(m.normal) == FUNC.normal1(x)))) # Check function has been specified correctly
+  stopifnot(! (FALSE %in% (predict(m.robust) == FUNC.robust1(x)))) 
+  
+  # Differentiate the functions
+  d.normal1 <- Deriv( f = FUNC.normal1, x="x", nderiv = 1 )
+  d.robust1 <- Deriv( f = FUNC.robust1, x="x", nderiv = 1 ) 
+  d.normal2 <- Deriv( f = FUNC.normal2, x="x", nderiv = 1 )
+  d.robust2 <- Deriv( f = FUNC.robust2, x="x", nderiv = 1 ) 
+  grads.normal1 <- vapply(X = x, FUN=d.normal1, FUN.VALUE = numeric(1))
+  grads.robust1 <- vapply(X = x, FUN=d.normal1, FUN.VALUE = numeric(1))
+  grads.normal2 <- vapply(X = x, FUN=d.normal2, FUN.VALUE = numeric(1))
+  grads.robust2 <- vapply(X = x, FUN=d.normal2, FUN.VALUE = numeric(1))
+  
+  # Mark the points of the elbow (when the gradient is closest to zero)
+  
+  lines(abline(v=x[which.min(abs(grads.normal1 - 0))], col=col1, lty=2, lwd=2)) # Point at which the gradient is closest to 0
+  lines(abline(v=x[which.min(abs(grads.robust1 - 0))], col=col2, lty=3, lwd=2)) # Point at which the gradient is closest to 0
+  lines(abline(v=x[which.min(abs(grads.normal2 - 0))], col=col1, lty=4, lwd=2)) # Point at which the gradient is closest to 0
+  lines(abline(v=x[which.min(abs(grads.robust2 - 0))], col=col2, lty=5, lwd=2)) # Point at which the gradient is closest to 0
+  
+  # Also plot the gradients as a separate graph
+  plot(   x=x, y=grads.normal1, col="red", pch=1, ylab="Gradient", ylim=c(-0.05,0.05))
+  #points( x=x, y=grads.robust1, col=col2, pch=2)
+  points( x=x, y=grads.normal2, col="blue", pch=1)
+  #points( x=x, y=grads.robust2, col=col2, pch=2)
+  
+  # lines(abline(h=y[which.min(abs(gradients - 0))], col="blue", lty=2))
+  # # Can show the gradient on the same chart (useful for debugging)
+  # points(x=x, y=((gradients*1000)+0.3), col=sapply(X=gradients, FUN=function(z) if(z>0) "blue" else "red"))
+  # #print(gradients)
+  # 
+  # 
+
+}
+
+```
+
+
+Repeat but don't bother with 'robust' versions as the gradients are the same
+
+
+```{r s.model-all2, fig.width=9, fig.height=6 }
+par(mfrow=c(length(all)/2,4))
+FORM.CUBE <- y ~ x + I(x^2) + I(x^3) # Cubic formula to fit to change in S index
+FORM.QUAD <- y ~ x + I(x^2) # Quadratic
+
+for (a in all) {
+  r <- a$r # This is the results of the msea test
+  name <- a$name # This is the name of the crime type
+  base <- a$base # Base and test points (not actually needed here)
+  test <- a$test
+  
+  # This code to graph and calculate gradients came from the 's.model' chunk.
+  # I've expanded the functions here to make it easier to play around with
+  
+  col1 <- "#d8b365"
+  col2 <- "#5ab4ac"
+  
+  x =        r$num.cells
+  y.normal = r$globalS
+  
+  # Plot points
+  plot(  x, y.normal, main=name, ylim=c(0,1), col="#999999", pch='o', 
+         xlab="Number of Cells", ylab="Global S Index")
+  
+  # Calculate models for points using FORM
+  
+  m.quad <- lm( FORM.QUAD, data=list("x"=x, "y"=y.normal) ) 
+  m.cube <- lm( FORM.CUBE, data=list("x"=x, "y"=y.normal) ) 
+  lines(x=x, y=predict(m.quad), col="red", lwd=2)
+  lines(x=x, y=predict(m.cube), col="blue", lwd=2)
+  
+  # Calculate gradients
+  
+  # Function to differentiate. Do three versions - the quad, the cubic, and the weird one (cubic without x^3 term)
+  FUNC.cube <- function(x) coef(m.cube)[1] + (coef(m.cube)[2]*x) + (coef(m.cube)[3]*(x^2)) + (coef(m.cube)[4]*(x^3)) 
+  
+  FUNC.quad <- function(x) coef(m.quad)[1] + (coef(m.quad)[2]*x) + (coef(m.quad)[3]*(x^2))
+  
+  FUNC.weird <- function(x) coef(m.cube)[1] + (coef(m.cube)[2]*x) + (coef(m.cube)[3]*(x^2))
+  
+  stopifnot(! (FALSE %in% (predict(m.quad) == FUNC.quad(x)))) # Check function has been specified correctly
+  stopifnot(! (FALSE %in% (predict(m.cube) == FUNC.cube(x)))) # Check function has been specified correctly
+  
+  # Differentiate the functions
+  d.quad  <- Deriv( f = FUNC.quad,  x="x", nderiv = 1 )
+  d.cube  <- Deriv( f = FUNC.cube,  x="x", nderiv = 1 )
+  d.cube2 <- Deriv( f = FUNC.cube,  x="x", nderiv = 2 ) # Try second derivative of cube as well
+  d.weird <- Deriv( f = FUNC.weird, x="x", nderiv = 1 )
+  
+  grads.quad   <- vapply(X = x, FUN=d.quad,  FUN.VALUE = numeric(1))
+  grads.cube   <- vapply(X = x, FUN=d.cube,  FUN.VALUE = numeric(1))
+  grads.cube2  <- vapply(X = x, FUN=d.cube2, FUN.VALUE = numeric(1))
+  grads.weird  <- vapply(X = x, FUN=d.weird, FUN.VALUE = numeric(1))
+  
+    # Mark the points of the elbow (when the gradient is closest to zero)
+  
+  lines(abline(v=x[which.min(abs(grads.quad  - 0))], col=1, lty=2, lwd=2)) # Point at which the gradient is closest to 0
+  lines(abline(v=x[which.min(abs(grads.cube  - 0))], col=2, lty=2, lwd=2)) # Point at which the gradient is closest to 0
+  lines(abline(v=x[which.min(abs(grads.cube2 - 0))], col=3, lty=2, lwd=2)) # Point at which the gradient is closest to 0
+  lines(abline(v=x[which.min(abs(grads.weird - 0))], col=4, lty=2, lwd=2)) # Point at which the gradient is closest to 0
+
+
+  # Also plot the gradients as a separate graph
+  plot(   x=x, y=grads.quad,  col=1, pch=1, ylab="Gradient", ylim=c(-0.0005,0.0005))
+  points( x=x, y=grads.cube,  col=2, pch=1)
+  points( x=x, y=grads.cube2, col=3, pch=1)
+  points( x=x, y=grads.weird, col=4, pch=1)
+  
+  lines(abline(v=x[which.min(abs(grads.quad  - 0))], col=1, lty=2, lwd=2)) # Point at which the gradient is closest to 0
+  lines(abline(v=x[which.min(abs(grads.cube  - 0))], col=2, lty=2, lwd=2)) # Point at which the gradient is closest to 0
+  lines(abline(v=x[which.min(abs(grads.cube2 - 0))], col=3, lty=2, lwd=2)) # Point at which the gradient is closest to 0
+  lines(abline(v=x[which.min(abs(grads.weird - 0))], col=4, lty=2, lwd=2)) # Point at which the gradient is closest to 0
+  
+  legend("topright", legend=c("Quad","Cube","Cube2","Weird"), pch="o", col=c(1,2,3,4))
+  
+}
+
+```
+
+Repeat again, but this time do 
+
+```{r s.model-all2, fig.width=9, fig.height=6 }
+par(mfrow=c(length(all)/2,4))
+FORM1 <- y ~ x + I(x^2) + I(x^3) # Cubic formula to fit to change in S index
+FORM2 <- y ~ x + I(x^2) # Quadratic formula to fit to change in S index
+
+for (a in all) {
+  r <- a$r # This is the results of the msea test
+  name <- a$name # This is the name of the crime type
+  base <- a$base # Base and test points (not actually needed here)
+  test <- a$test
+  
+  # This code to graph and calculate gradients came from the 's.model' chunk.
+  # I've expanded the functions here to make it easier to play around with
+  
+  col1 <- "#d8b365"
+  col2 <- "#5ab4ac"
+  
+  x =        r$num.cells
+  y.normal = r$globalS
+  
+  # Plot points
+  plot(  x, y.normal, main=name, pch=1, ylim=c(0,1), col="black", 
+         xlab="Number of Cells", ylab="Global S Index")
+  
+  # Calculate models for points using FORM
+  m.normal <- lm( FORM, data=list("x"=x, "y"=y.normal) ) 
+  lines(x=x, y=predict(m.normal), col="red", lwd=2)
+  
+  # Calculate gradients
+  
+  # Function to differentiate. Do two versions - the proper version, and one where we ignore the cubic term
+  FUNC.normal1 <- function(x) 
+    coef(m.normal)[1] + (coef(m.normal)[2]*x) + (coef(m.normal)[3]*(x^2)) + (coef(m.normal)[4]*(x^3)) 
+  FUNC.normal2 <- function(x) coef(m.normal)[1] + (coef(m.normal)[2]*x) + (coef(m.normal)[3]*(x^2))
+  
+  stopifnot(! (FALSE %in% (predict(m.normal) == FUNC.normal1(x)))) # Check function has been specified correctly
+  
+  # Differentiate the functions
+  d.normal1 <- Deriv( f = FUNC.normal1, x="x", nderiv = 1 )
+  d.normal2 <- Deriv( f = FUNC.normal2, x="x", nderiv = 1 )
+  grads.normal1 <- vapply(X = x, FUN=d.normal1, FUN.VALUE = numeric(1))
+  grads.normal2 <- vapply(X = x, FUN=d.normal2, FUN.VALUE = numeric(1))
+  
+  # Mark the points of the elbow (when the gradient is closest to zero)
+  
+  lines(abline(v=x[which.min(abs(grads.normal1 - 0))], col=col1, lty=2, lwd=2)) # Point at which the gradient is closest to 0
+  lines(abline(v=x[which.min(abs(grads.normal2 - 0))], col=col2, lty=2, lwd=2)) # Point at which the gradient is closest to 0
+
+  # Also plot the gradients as a separate graph
+  plot(   x=x, y=grads.normal1, col=col1, pch=1, ylab="Gradient", ylim=c(-0.0005,0.0005))
+  points( x=x, y=grads.normal2, col=col2, pch=1)
+  #points( x=x, y=grads.normal1, col=col1, pch=1)
+  lines(abline(v=x[which.min(abs(grads.normal1 - 0))], col=col1, lty=2, lwd=2))
+  lines(abline(v=x[which.min(abs(grads.normal2 - 0))], col=col2, lty=2, lwd=2))
+  
+}
+
+```
+
+
+
 
 Graph those results using XXXX DECIDE ON WHICH DATA TO USE - ROBUST? and WITH ZOROS? 
 _What does this tell us?_
 
 
 
-TESTING
-
-```{r , eval=FALSE}
-par(mfrow=c(1,2))
-#x <- r$num.cells[1:length(r$num.cells)]
-#y <- r$globalS.robust[1:length(r$num.cells)]
-
-#x <- r.withzeros$cell.areas[100:length(r$num.cells)]
-#y <- r.withzeros$globalS.robust[100:length(r$num.cells)]
-
-#x <- r$num.cells[100:length(r$num.cells)]
-#y <- r$globalS.robust[100:length(r$num.cells)]
-
-x <- r$num.cells[1:length(r$num.cells)]
-y <- r$globalS.robust[1:length(r$num.cells)]
-
-lo <- if (USE.LM) lm(y ~ x + I(x^2) ) else loess(y~x, degree = DEGREE)
-
-lo <- lm(y ~ x + I(x^2) )
-
-gradients <- calc.gradients(lo,x)
-
-plot(x,y, main="NumCells (Normal)" )
-lines(x=x, y=predict(lo), col='red', lwd=2)
-
-
-
-
-# Find the x value with the optimal gradient
-
-lines(abline(v=x[which.min(abs(gradients - 0))], col="blue", lty=2))
-lines(abline(h=y[which.min(abs(gradients - 0))], col="blue", lty=2))
-
-#testfun <- function(x) x + x^2
-plot(x=x, y=gradients)
-
-```
 
 _Could also do **Lorenze curves** at some of the resolutions (as per Eck's [review of crime concentrations](https://crimesciencejournal.springeropen.com/articles/10.1186/s40163-017-0070-4)).
 
