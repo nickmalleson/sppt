@@ -122,6 +122,7 @@ datasource <- "./data-raw/vancouver_all/"
 
 # Introduction
 
+Recent research has, almost unanimously.
 XXXX
 
 
@@ -1120,13 +1121,16 @@ for (a in all) {
 
 ```
 
-Log model seems to do very well, but using the miniumu gradient doesn't get the elbow.
+Log model seems to do very well, but using the minimum gradient doesn't get the elbow.
 
-Delve into the gradients of the log model in more detail:
+Delve into the gradients of the log model and its derivatives in more detail:
 
-```{r s.model-all3, fig.width=9, fig.height=9 }
+```{r s.model-all-log, fig.width=9, fig.height=9 }
 options(scipen=1) # A bit of scientific notation is OK
 par(mfrow=c(length(all),4))
+
+START <- 10 # Drop those first few really big cells
+END   <- length(all[[1]]$r$num.cells)
 
 FORM.LOG  <- y ~ log(x)
 
@@ -1140,16 +1144,16 @@ for (a in all) {
   base <- a$base # Base and test points (not actually needed here)
   test <- a$test
   
-  x <- r$num.cells
-  y <- r$globalS
+  x <- r$num.cells[START:END]
+  y <- r$globalS[START:END]
   
   # Plot points
-  plot(  x, y.normal, main=name, ylim=c(0,1), col="#999999", pch='o', 
+  plot(  x, y, main=name, ylim=c(0,1), col="#999999", pch='o', 
          xlab="Number of Cells", ylab="Global S Index")
   
   # Calculate models for points using FORM
   
-  m.log  <- lm( FORM.LOG,  data=list("x"=x, "y"=y.normal) )
+  m.log  <- lm( FORM.LOG,  data=list("x"=x, "y"=y) )
   lines(x=x, y=predict(m.log ), col=1, lwd=2)
   
   # Check that they have the extected number of coefficients
@@ -1227,11 +1231,12 @@ See what happens to the Global S Index as the relative size of the base and test
  5. Graph s against proportion
  
 ```{r testS.Samples, eval=FALSE}
-
+par(mfrow=c(1,1))
 #van.poly <- readOGR("./data-raw/vancouver_all/areas.shp")
 
-bner <- BNER[BNER$YEAR==2016,]
-proportion <- seq(from=0.99, to=0.01, by=-0.01)
+#bner <- BNER[BNER$YEAR==2016,]
+bner <- BNER
+proportion <- seq(from=0.99, to=0.01, by=-0.05)
 # Do four tests per proportion
 prop <- c()
 for (i in 1:4) {
@@ -1239,20 +1244,41 @@ for (i in 1:4) {
 }
 proportion <- prop
 rm(prop)
+proportion <- sort(proportion)
 
-globalS <- mclapply(X=proportion, FUN=function(p) {
+s.objects <- mclapply(X=proportion, FUN=function(p) {
   
   samp <- sample(1:nrow(bner), size=nrow(bner)*p)
-  base <- bner[samp, ]
-  test <- bner[-samp,]
-  stopifnot( (nrow(base) + nrow(test)) == nrow(bner) )
+  #base <- bner[samp, ]
+  base <- bner
+  test <- bner[samp,]
+  #stopifnot( (nrow(base) + nrow(test)) == nrow(bner) )
   
   s <- sppt(base_points.sp = base, test_points.sp = test, uoa.sp = van.poly)
-  return(s$globalS[[1]])
+  return(s)
 })
 
-  
-plot(x=proportion, y=unlist(globalS))
+globalS <-        vapply(X=s.objects, FUN.VALUE = numeric(1), FUN=function(a) {a$globalS[[1]]})
+globalS.robust <- vapply(X=s.objects, FUN.VALUE = numeric(1), FUN=function(a) {a$globalS.robust[[1]]})
+
+fit <-        lm ( y ~ x + I(x^2), data=data.frame("x"=proportion, "y"=globalS) ) 
+fit.robust <- lm ( y ~ x + I(x^2), data=data.frame("x"=proportion, "y"=globalS.robust) )
+
+preds <-        predict(fit,        data=data.frame("x"=proportion, "y"=globalS),        interval = 'confidence')
+preds.robust <- predict(fit.robust, data=data.frame("x"=proportion, "y"=globalS.robust), interval = 'confidence')
+
+plot(  x=proportion, y=unlist(globalS), main="BNER ALL", col=1, xlab="proportion", ylab="S")
+
+polygon(c(rev(proportion), proportion), c(rev(preds[ ,3]), preds[ ,2]), col = 1, border = NA)
+polygon(c(rev(proportion), proportion), c(rev(preds.robust[ ,3]), preds.robust[ ,2]), col = 2, border = NA)
+
+points(x=proportion, y=unlist(globalS), col=1)
+points(x=proportion, y=unlist(globalS.robust), col=2)
+
+lines(x=proportion, y=predict(fit),        col=1, lty=1)
+lines(x=proportion, y=predict(fit.robust), col=2, lty=1)
+
+legend("topleft", legend=c("Noral", "Robust"), col=c(1,2), pch=1)
 
 
 ```
