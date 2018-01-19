@@ -12,4 +12,5 @@ spatial_resolution_cache/
 spatial_resolution_files/
 figure/
 cache/
+figs_for_paper/
 spatial_resolution.RData
