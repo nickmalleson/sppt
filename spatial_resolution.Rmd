@@ -550,8 +550,8 @@ test.data <- BNER[BNER$YEAR==2016,]
 
 #r <- msea(base.data, test.data, N=5, n.shifts = 2, ignore.zeros = FALSE)
 
-#r <-           msea(base.data, test.data, N=120, n.shifts=5, ignore.zeros = T, step=2)
-#r.withzeros <- msea(base.data, test.data, N=120, n.shifts=5, ignore.zeros = F, step=2)
+r <-           msea(base.data, test.data, N=120, n.shifts=1, ignore.zeros = T, step=20)
+r.withzeros <- msea(base.data, test.data, N=80, n.shifts=5, ignore.zeros = F, step=10)
 
 # Do for both with and without zeros, at the same time
 tmp <- mclapply(X = c(T,F), FUN = function(x) {
@@ -1204,6 +1204,48 @@ for (a in all) {
 
 
 
+Do a single graph that we can use for the paper (when explaining how the method works). Use TOB because the model fits the data well (it's only for illustrative purposes so doesn't really matter.)
+
+```{r example_error_graph_for_paper, fig.width=9, fig.height=6 }
+options(scipen=1) # A bit of scientific notation is OK
+par(mfrow=c(1,1))
+
+START <- 10 # Drop those first few really big cells
+END   <- length(all[[1]]$r$num.cells)
+
+FORM.LOG  <- y ~ log(x)
+
+r <- all[[4]]$r # This is the TOB data
+stopifnot(all[[4]]$name == "TOB")
+
+x <- r$num.cells[START:END]
+y <- r$globalS[START:END]
+
+# Calculate models for points using FORM
+m.log  <- lm( FORM.LOG,  data=list("x"=x, "y"=y) )
+
+# Check that the model has the extected number of coefficients
+stopifnot(length(coef(m.log ))==2)
+
+# Plot
+plot(  x, y, main="Similarity of two point patterns at different resolutions", ylim=c(0.4,1), col="black", axes=FALSE,
+       xlab="Number of Cells (Resolution)", ylab="Global S Index (Similarity)")
+Axis(side=1, labels=FALSE)
+Axis(side=2, labels=FALSE)
+lines(x=x, y=predict(m.log ), col="red", lwd=2, lty=2)
+
+
+# And a pdf for the paper
+pdf(file="./figs_for_paper/example_error_graph_for_paper.pdf", width=6, height=8)
+plot( x, y, ylim=c(0.4,1), col="black", axes=FALSE, cex.lab = 1.2,
+      xlab="Number of Cells (Resolution)", ylab="Global S Index (Similarity)")
+Axis(side=1, labels=FALSE)
+Axis(side=2, labels=FALSE)
+lines(x=x, y=predict(m.log ), col="red", lwd=2, lty=2)
+dev.off()
+  
+
+```
 
 
 _Could also do **Lorenze curves** at some of the resolutions (as per Eck's [review of crime concentrations](https://crimesciencejournal.springeropen.com/articles/10.1186/s40163-017-0070-4)).
@@ -1275,8 +1317,15 @@ polygon(c(rev(proportion), proportion), c(rev(preds.robust[ ,3]), preds.robust[ 
 points(x=proportion, y=unlist(globalS), col=1)
 points(x=proportion, y=unlist(globalS.robust), col=2)
 
+# Models
 lines(x=proportion, y=predict(fit),        col=1, lty=1)
 lines(x=proportion, y=predict(fit.robust), col=2, lty=1)
+
+# Confidence intervals
+lines(proportion, preds[ ,3],        lty = 'dashed', col = 1)
+lines(proportion, preds[ ,2],        lty = 'dashed', col = 1)
+lines(proportion, preds.robust[ ,3], lty = 'dashed', col = 2)
+lines(proportion, preds.robust[ ,2], lty = 'dashed', col = 2)
 
 legend("topleft", legend=c("Noral", "Robust"), col=c(1,2), pch=1)
 
@@ -1300,8 +1349,11 @@ save.image("spatial_resolution.RData")
 
 # The numbers used to make the graphs
 write.csv(
-  data.frame("CellArea"=r$cell.areas, "NumCells"=r$num.cells, "RSS"=r$rss, "RSquared"=r$r.squared, "RMSE"=r$rmse,
-             "GlobalS" = r$globalS, "GlobalSRobust" = r$globalS.robust), 
+  #data.frame("CellArea"=r$cell.areas, "NumCells"=r$num.cells, "RSS"=r$rss, "RSquared"=r$r.squared, "RMSE"=r$rmse,
+  #           "GlobalS" = r$globalS, "GlobalSRobust" = r$globalS.robust), 
+  data.frame("CellArea"=r.withzeros$cell.areas, "NumCells"=r.withzeros$num.cells, "RSS"=r.withzeros$rss,
+             "RSquared"=r.withzeros$r.squared, "RMSE"=r.withzeros$rmse,
+             "GlobalS" = r.withzeros$globalS, "GlobalSRobust" = r.withzeros$globalS.robust), 
   file = "ROUT/results.csv")
 
 # Delete old shapefiles
@@ -1312,10 +1364,10 @@ for (f in files) {
 }
 
 # Write new ones, using the i and j counters from the nested loops to name the files
-for (x in 1:length(r$results)) {
-  res <- r$results[[x]]
-  i <- r$iteration[x]
-  j <- r$shift[x]
+for (x in 1:length(r.withzeros$results)) {
+  res <- r.withzeros$results[[x]]
+  i <-   r.withzeros$iteration[x]
+  j <-   r.withzeros$shift[x]
   writeOGR(obj = res, dsn = "./ROUT", layer = paste0("result_",i,"_",j), 
            driver = "ESRI Shapefile", overwrite_layer = TRUE)
 }
