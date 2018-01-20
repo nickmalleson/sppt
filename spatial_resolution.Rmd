@@ -119,27 +119,13 @@ datasource <- "./data-raw/vancouver_all/"
 #areas.layer <- "areas"  # The polygon boundary file
 ```
  
-
-# Introduction
-
-Recent research has, almost unanimously.
-XXXX
-
-
-# Background
-
-XXXX
-
-
 # Data
-
-XXXX Information about the data. 
 
 We use publicly-available Vancouver crime data, available [here](http://data.vancouver.ca/datacatalogue/crime-data.htm).
 
 Data are available from: [http://data.vancouver.ca/datacatalogue/crime-data-details.htm](http://data.vancouver.ca/datacatalogue/crime-data-details.htm) and there is a single zip file: [ftp://webftp.vancouver.ca/opendata/shape/crime_shp_all_years.zip](ftp://webftp.vancouver.ca/opendata/shape/crime_shp_all_years.zip).
 
-Begin by downloading the data (if necessary)
+The script begins by downloading the data (if necessary).
 
 ```{r downloadData }
 ZIPFILENAME <- "./data-raw/vancouver_public/crime_shp_all_years.zip"
@@ -542,114 +528,51 @@ msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE, step
   
 ```
 
-Now run the function. Just use two years of burglary data for now
-
-```{r runMSEA, cache=TRUE }
-base.data <- BNER[BNER$YEAR==2015,]
-test.data <- BNER[BNER$YEAR==2016,]
-
-#r <- msea(base.data, test.data, N=5, n.shifts = 2, ignore.zeros = FALSE)
-
-r <-           msea(base.data, test.data, N=120, n.shifts=1, ignore.zeros = T, step=20)
-r.withzeros <- msea(base.data, test.data, N=80, n.shifts=5, ignore.zeros = F, step=10)
-
-# Do for both with and without zeros, at the same time
-tmp <- mclapply(X = c(T,F), FUN = function(x) {
-  msea(base.data, test.data, N=150, n.shifts=5, ignore.zeros = x, step=5)
-})
-r <- tmp[[1]]
-r.withzeros <- tmp[[2]]
-rm(tmp)
-```
-
-
 # Results
 
-## Map total number of points
+## Run the MSEA
 
-For a sanity check: map the total number of base and test points for some different grids
+Note that when zeros are included in the analysis, the similarity of the comparison increases. This is because there will be many cells with no crimes, hence the _same number_ of crimes (0). However, when we examine the graph of resolution against similarity, the shape of the graphs is identical so, importantly, the 1st derivatives are identical. This means that in the later analysis it doesn't matter whether cells with zero counts are included or not as we will always find the same 'elbow'/kink in the graph. This can be verified by running an earlier version of this file that included cells with and without zero:
 
-```{r map.totals , fig.width=9, fig.height=4}
-par(mfrow=c(2,4))
+ - https://github.com/nickmalleson/sppt/blob/2692a3676fa6c58f9041b637b0f649ec4cc0b908/spatial_resolution.Rmd
 
-#plot(results[[length(results)]])
-#points(base.data)
-for (i in 4:1) {
-  index <- round(length(r$results) / i )
-  choropleth(r$results[[index]], r$results[[index]]@data$points1, main=paste("PointsA",i), lty=0)
+In the subsequent analysis cells with no crimes will be included.
+
+Run the MSEA algorithm on BNER, BNEC, TFV and TOB, comparing 2015 and 2016.
+
+```{r runMSEA-all, cache=TRUE }
+
+# Put the data into lists so I don't have to do too much repeating
+
+data1 <- list("base" = BNER[BNER$YEAR==2015,], "test"= BNER[BNER$YEAR==2016,], name="BNER")
+data2 <- list("base" = BNEC[BNEC$YEAR==2015,], "test"= BNEC[BNEC$YEAR==2016,], name="BNEC")
+data3 <- list("base" = TFV[TFV$YEAR==2015,], "test"= TFV[TFV$YEAR==2016,], name="TFV")
+data4 <- list("base" = TOB[TOB$YEAR==2015,], "test"= TOB[TOB$YEAR==2016,], name="TOB")
+all <- list(data1, data2, data3, data4)
+rm(data1, data2, data3, data4)
+
+# Do all crime types at the same time.
+tmp <- mclapply(X = all, FUN = function(x) {
+  #msea(x[['base']], x[['test']], N=10, n.shifts=1, ignore.zeros = F, step=1)
+  msea(x[['base']], x[['test']], N=150, n.shifts=5, ignore.zeros = F, step=5,
+       return.sobject=FALSE, return.grids=FALSE)
+}, mc.preschedule=FALSE)
+stopifnot(length(tmp)==4)
+# Store the results in the lists in an item called 'r'
+for (i in 1:length(tmp)) {
+  all[[i]][['r']] <- tmp[[i]]
 }
-
-#plot(results[[length(results)]])
-#points(test.data)
-for (i in 4:1) {
-  index <- round(length(r$results) / i )
-  choropleth(r$results[[index]], r$results[[index]]@data$points2, main=paste("PointsB",i), lty=0)
-}
-```
-
-## Map the difference in proportions
-
-Map the difference in proportions for a few grids.
-
-```{r map.abs.prop.diff,  fig.width=8, fig.height=6}
-statistic <- "abs.pct.diff" # The statistic to map
-
-par(mfrow=c(2,2))
-NCOL <- 7
-for (i in 4:1) {
-  index <- round(length(r$results) / i )
-  
-  s.breaks <- classIntervals(r$results[[index]]@data[,statistic], n = NCOL, style = 'pretty')$brks
-  s <- shading(s.breaks, cols=brewer.pal(length(s.breaks)+1,'RdYlGn') ) 
-  
-  choropleth(r$results[[index]], r$results[[index]]@data[,statistic], main=paste(statistic,i),
-             lty=0, shading = s)
-  choro.legend("topright", sh = s, cex=0.8)
-}
-rm(statistic)
-```
-
-Also do a fuzzy map of the difference in proportions.
-
-```{r map.abs.prop.diff.fuzzy, fig.width=6, fig.height=5}
-# Maximum number of results we can map is 256 because transparency is represented by a two-digit hex
-# I actually set this as lower otherwise it doesn't work (all the colours add up to red)
-results.to.map <- NA
-if (length(r$results) > 50) {
-  results.to.map <- sample(x=1:length(r$results), size=50, replace = FALSE )
-  print("Only mapping 50 of all grids ")
-} else {
-  results.to.map <- 1:(length(r$results)-1)
-}
-
-statistic <- "abs.pct.diff" # The statistic to map
-par(mfrow=c(1,1))
-last.result <- r$results[[length(r$results)]] # Convenience for list result generated (the smallest grid)
-
-# Shading
-s.breaks <- classIntervals(last.result@data[,statistic], n = NCOL, style = 'pretty')$brks
-s         <- shading(s.breaks, cols=add.alpha(brewer.pal(length(s.breaks)+1,'RdYlGn'), (1/length(results.to.map))))
-s.noalpha <- shading(s.breaks, cols=          brewer.pal(length(s.breaks)+1,'RdYlGn') ) 
-
-choropleth(
-  last.result, last.result@data[,statistic], shading = s, main=paste0("Fuzzy ",statistic), lty=0
-  )
-
-for ( index in results.to.map) {
-  choropleth( r$results[[index]], r$results[[index]]@data[,statistic], shading = s, lty=0, add=TRUE )
-}
-
-# For the legend, redo the shading as above but without the alpha (don't want the legend colours to be transparent)
-
-choro.legend("topright", sh=s.noalpha, cex=0.8)
-rm(statistic)
+rm(tmp)
+gc() # Do some garbage collection after deleting the big temporary objects (maybe not necessary)
 ```
 
 ## Map the Local S Index
 
-Map the Local S for a few grids.
+Map the Local S for a few grids, just out of interest
 
-```{r map.globalS, fig.width=8, fig.height=6}
+XXXX HERE - revise code below to work with the new 'all' list.
+
+```{r map.globalS, fig.width=8, fig.height=6, eval=FALSE}
 statistic <- "localS" # The statistic to map
 
 par(mfrow=c(2,2))
@@ -666,9 +589,11 @@ for (i in 4:1) {
 }
 ```
 
-Also do a fuzzy map of the difference in proportions.
+Also do a fuzzy map of the difference in local S values.
 
-```{r map.globalS.fuzzy, fig.width=6, fig.height=5}
+XXXX HERE - revise code below to work with the new 'all' list.
+
+```{r map.globalS.fuzzy, fig.width=6, fig.height=5, eval=FALSE}
 # Maximum number of results we can map is 256 because transparency is represented by a two-digit hex
 # I actually set this as lower otherwise it doesn't work (all the colours add up to red)
 results.to.map <- NA
@@ -701,429 +626,20 @@ choro.legend("topright", sh=s.noalpha, cex=0.8)
 ```
 
 
-
-
-
 ## Spatial Error Resolution
 
-Graph the differences using two difference _x_ axes:
- 
-  - The number of cells used
-  - The square area of an individual cell (smallest cells first)
+Graph the differences using the number of cells used.
 
-Also do this for the results with and without zeros
+XXXX HERE
 
-Note: _the data have been reversed for the square area of a cell graphs (so points with the smallest cells occur on the right of the graph), but the axis label hasn't been reversed so is wrong. (This will only matter for publication)_
+GRAPH THE ERRORS, USING THE 4 AVAILABLE STATISTICS, FOR EACH CRIME TYPE
 
-```{r graphError, fig.width=9, fig.height=12 }
 
-# Go through all of the results and calculate errors
+Prior research showed that a log model was the most successful at representing the curve of Local S against resolution (measured by number of cells). This can be verified by running an earlier version of this file that included cells with and without zero:
 
-par(mfrow=c(5,4))
+ - https://github.com/nickmalleson/sppt/blob/2692a3676fa6c58f9041b637b0f649ec4cc0b908/spatial_resolution.Rmd
 
-# RSS
-plot(x=r$num.cells, y=r$rss, type='o', main="RSS (no zeros)", xlab="Number of cells")
-plot(x=rev(r$cell.areas), y=r$rss, type='o', main="RSS (no zeros)", xlab="Square area of a cell")
-plot(x=r.withzeros$num.cells, y=r.withzeros$rss, type='o', main="RSS (with zeros)", xlab="Number of cells")
-plot(x=rev(r.withzeros$cell.areas), y=r.withzeros$rss, type='o', main="RSS (with zeros)", xlab="Square area of a cell")
-
-# RSquared
-plot(x=r$num.cells, y=r$r.squared, type='o', main="R-Squared (no zeros)", xlab="Number of cells")
-plot(x=rev(r$cell.areas), y=r$r.squared, type='o', main="R-Squared (no zeros)", xlab="Square area of a cell")
-plot(x=r.withzeros$num.cells, y=r.withzeros$r.squared, type='o', main="R-Squared (with zeros)", xlab="Number of cells")
-plot(x=rev(r.withzeros$cell.areas), y=r.withzeros$r.squared, type='o', main="R-Squared (with zeros)", xlab="Square area of a cell")
-
-# RMSE
-plot(x=r$num.cells, y=r$rmse, type='o', main="RMSE (no zeros)", xlab="Number of cells")
-plot(x=rev(r$cell.areas), y=r$rmse, type='o', main="RMSE (no zeros)", xlab="Square area of a cell")
-plot(x=r.withzeros$num.cells, y=r.withzeros$rmse, type='o', main="RMSE (with zeros)", xlab="Number of cells")
-plot(x=rev(r.withzeros$cell.areas), y=r.withzeros$rmse, type='o', main="RMSE (with zeros)", xlab="Square area of a cell")
-
-# Global S
-plot(x=r$num.cells, y=r$globalS, type='o', main="Global S (no zeros)", xlab="Number of cells")
-plot(x=rev(r$cell.areas), y=r$globalS, type='o', main="Global S (no zeros)", xlab="Square area of a cell")
-plot(x=r.withzeros$num.cells, y=r.withzeros$globalS, type='o', main="Global S (with zeros)", xlab="Number of cells")
-plot(x=rev(r.withzeros$cell.areas), y=r.withzeros$globalS, type='o', main="Global S (with zeros)", xlab="Square area of a cell")
-
-# Global S (Robust)
-plot(x=r$num.cells, y=r$globalS.robust, type='o', main="Global S (robust)\n(no zeros)", xlab="Number of cells")
-plot(x=rev(r$cell.areas), y=r$globalS.robust, type='o', main="Global S (robust)\n(no zeros)", xlab="Square area of a cell")
-plot(x=r.withzeros$num.cells, y=r.withzeros$globalS.robust, type='o', main="Global S (robust)\n(with zeros)", xlab="Number of cells")
-plot(x=rev(r.withzeros$cell.areas), y=r.withzeros$globalS.robust, type='o', main="Global S (robust)\n(with zeros)", xlab="Square area of a cell")
-
-
-```
-
-**TODO: discuss these results. Why do RSS and RMSE decrese? Errors should increase?**
-
-Now estimate a quadratic model that represents the change in S Index. Later this will be differentiated to calculate the point at which the gradient is 45 degrees.
-
-_Good information about fitting polynomials in R_ [here](https://www.r-bloggers.com/fitting-polynomial-regression-in-r/).
-
-```{r s.model, fig.width=9, fig.height=6 }
-par(mfrow=c(2,4))
-
-START <-10 # Sometimes ignore first few grids
-END <- length(r$cell.areas)
-
-FORM <- y ~ x + I(x^2) + I(x^3)
-
-# Calculate the gradient of a model, m, at each point, x (assumes m is a polynomial)
-calc.gradients <- function(m, x) {
-  f <- function(x) coef(m)[1] + (coef(m)[2]*x) + (coef(m)[3]*(x^2)) #+ (coef(m)[4]*(x^3)) 
-  stopifnot(! (FALSE %in% predict(m) == f(x))) # Check function has been specified correctly
-  d <- Deriv( f = f, x="x", nderiv = 1 ) # Calculate the second derivitive
-  gradients <- vapply(X = x, FUN=d, FUN.VALUE = numeric(1))
-  return(gradients)
-}
-
-make.gradient.plot <- function(x, y, form, main="") {
-  m <- lm( form, data=list("x"=x, "y"=y) ) 
-  plot(x,y, main=main )
-  lines(x=x, y=predict(m), col='red', lwd=2)
-  gradients <- calc.gradients(m,x)
-  lines(abline(v=x[which.min(abs(gradients - 0))], col="blue", lty=2)) # Point at which the gradient is closest to 0
-  lines(abline(h=y[which.min(abs(gradients - 0))], col="blue", lty=2))
-  # Can show the gradient on the same chart (useful for debugging)
-  points(x=x, y=((gradients*1000)+0.3), col=sapply(X=gradients, FUN=function(z) if(z>0) "blue" else "red"))
-  #print(gradients)
-}
-
-
-# START BY INCLUDING ZEROS
-
-make.gradient.plot( x=r.withzeros$num.cells[START:END], 
-                    y=r.withzeros$globalS.robust[START:END],
-  form=FORM, main = "NumCells : Robust :\nZeros" )
-
-make.gradient.plot( x=r.withzeros$num.cells[START:END], 
-                    y=r.withzeros$globalS[START:END],
-  form=FORM, main = "NumCells : Normal :\nZeros" )
-
-make.gradient.plot( x=r.withzeros$cell.areas[START:END], 
-                    y=r.withzeros$globalS.robust[START:END],
-  form=FORM, main = "CellAreas : Robust :\nZeros" )
-
-make.gradient.plot( x=r.withzeros$cell.areas[START:END], 
-                    y=r.withzeros$globalS[START:END],
-  form=FORM, main = "CellAreas : Normal :\nZeros" )
-
-
-
-
-# NOW EXCLUDE ZEROS
-
-
-make.gradient.plot( x=r$num.cells[START:END], 
-                    y=r$globalS.robust[START:END],
-  form=FORM, main = "NumCells : Robust :\nNo Zeros" )
-
-make.gradient.plot( x=r$num.cells[START:END], 
-                    y=r$globalS[START:END],
-  form=FORM, main = "NumCells : Normal :\nNo Zeros" )
-
-make.gradient.plot( x=r$cell.areas[START:END], 
-                    y=r$globalS.robust[START:END],
-  form=FORM, main = "CellAreas : Robust :\nNo Zeros" )
-
-make.gradient.plot( x=r$cell.areas[START:END], 
-                    y=r$globalS[START:END],
-  form=FORM, main = "CellAreas : Normal :\nNo Zeros" )
-
-
-```
-
-
-Interestingly the graphs with number of cells on the x axis all reach their elbow at the same resolution, albeit with different `globalS` values, regardless of the choice of statistic (normal or robust) or the inclusion (or not) of cells with no crimes in.
-
-Repeat above, but this time look at the spatial error resolution of a few different crime types
-
-```{r runMSEA-all, cache=TRUE }
-
-# Put the data into lists so I don't have to do too much repeating
-
-data1 <- list("base" = BNER[BNER$YEAR==2015,], "test"= BNER[BNER$YEAR==2016,], name="BNER")
-data2 <- list("base" = BNEC[BNEC$YEAR==2015,], "test"= BNEC[BNEC$YEAR==2016,], name="BNEC")
-data3 <- list("base" = TFV[TFV$YEAR==2015,], "test"= TFV[TFV$YEAR==2016,], name="TFV")
-data4 <- list("base" = TOB[TOB$YEAR==2015,], "test"= TOB[TOB$YEAR==2016,], name="TOB")
-all <- list(data1, data2, data3, data4)
-rm(data1, data2, data3, data4)
-
-# Do all at the same time. Include zeros.
-tmp <- mclapply(X = all, FUN = function(x) {
-  #msea(x[['base']], x[['test']], N=10, n.shifts=1, ignore.zeros = F, step=1)
-  msea(x[['base']], x[['test']], N=150, n.shifts=5, ignore.zeros = F, step=5,
-       return.sobject=FALSE, return.grids=FALSE)
-}, mc.preschedule=FALSE)
-stopifnot(length(tmp)==4)
-# Store the results in the lists in an item called 'r'
-for (i in 1:length(tmp)) {
-  all[[i]][['r']] <- tmp[[i]]
-}
-rm(tmp)
-gc() # Do some garbage collection after deleting the big temporary objects (maybe not necessary)
-```
-
-Now graph the change in local S index for each crime type.)
-
-```{r s.model-all, fig.width=9, fig.height=6}
-par(mfrow=c(length(all)/2,4))
-FORM <- y ~ x + I(x^2) + I(x^3) # Cubic formula to fit to change in S index
-
-for (a in all) {
-  r <- a$r # This is the results of the msea test
-  name <- a$name # This is the name of the crime type
-  base <- a$base # Base and test points (not actually needed here)
-  test <- a$test
-  
-  # This code to graph and calculate gradients came from the 's.model' chunk.
-  # I've expanded the functions here to make it easier to play around with
-  
-  col1 <- "#d8b365"
-  col2 <- "#5ab4ac"
-  
-  x =        r$num.cells
-  y.robust = r$globalS.robust
-  y.normal = r$globalS
-  
-  # Plot points
-  plot(  x, y.normal, main=name, pch=1, ylim=c(0,1), col=col1, 
-         xlab="Number of Cells", ylab="Global S Index")
-  points(x, y.robust, pch=2, col=col2)
-  
-  # Calculate model for points using FORM
-  m.normal <- lm( FORM, data=list("x"=x, "y"=y.normal) ) 
-  m.robust <- lm( FORM, data=list("x"=x, "y"=y.robust) ) 
-  lines(x=x, y=predict(m.normal), col="red", lwd=2)
-  lines(x=x, y=predict(m.robust), col="red", lwd=2)
-  
-  # Calculate gradients
-  
-  # Function to differentiate. Do two versions - the proper version, and one where we ignore the cubic term
-  FUNC.normal1 <- function(x) 
-    coef(m.normal)[1] + (coef(m.normal)[2]*x) + (coef(m.normal)[3]*(x^2)) + (coef(m.normal)[4]*(x^3)) 
-  FUNC.robust1 <- function(x) 
-    coef(m.robust)[1] + (coef(m.robust)[2]*x) + (coef(m.robust)[3]*(x^2)) + (coef(m.robust)[4]*(x^3)) 
-  FUNC.normal2 <- function(x) coef(m.normal)[1] + (coef(m.normal)[2]*x) + (coef(m.normal)[3]*(x^2))
-  FUNC.robust2 <- function(x) coef(m.robust)[1] + (coef(m.robust)[2]*x) + (coef(m.robust)[3]*(x^2))
-  
-  stopifnot(! (FALSE %in% (predict(m.normal) == FUNC.normal1(x)))) # Check function has been specified correctly
-  stopifnot(! (FALSE %in% (predict(m.robust) == FUNC.robust1(x)))) 
-  
-  # Differentiate the functions
-  d.normal1 <- Deriv( f = FUNC.normal1, x="x", nderiv = 1 )
-  d.robust1 <- Deriv( f = FUNC.robust1, x="x", nderiv = 1 ) 
-  d.normal2 <- Deriv( f = FUNC.normal2, x="x", nderiv = 1 )
-  d.robust2 <- Deriv( f = FUNC.robust2, x="x", nderiv = 1 ) 
-  grads.normal1 <- vapply(X = x, FUN=d.normal1, FUN.VALUE = numeric(1))
-  grads.robust1 <- vapply(X = x, FUN=d.normal1, FUN.VALUE = numeric(1))
-  grads.normal2 <- vapply(X = x, FUN=d.normal2, FUN.VALUE = numeric(1))
-  grads.robust2 <- vapply(X = x, FUN=d.normal2, FUN.VALUE = numeric(1))
-  
-  # Mark the points of the elbow (when the gradient is closest to zero)
-  
-  lines(abline(v=x[which.min(abs(grads.normal1 - 0))], col=col1, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-  lines(abline(v=x[which.min(abs(grads.robust1 - 0))], col=col2, lty=3, lwd=2)) # Point at which the gradient is closest to 0
-  lines(abline(v=x[which.min(abs(grads.normal2 - 0))], col=col1, lty=4, lwd=2)) # Point at which the gradient is closest to 0
-  lines(abline(v=x[which.min(abs(grads.robust2 - 0))], col=col2, lty=5, lwd=2)) # Point at which the gradient is closest to 0
-  
-  # Also plot the gradients as a separate graph
-  plot(   x=x, y=grads.normal1, col="red", pch=1, ylab="Gradient", 
-          ylim=c(min(grads.normal1, grads.normal2),max(grads.normal1, grads.normal2)))
-  #points( x=x, y=grads.robust1, col=col2, pch=2)
-  points( x=x, y=grads.normal2, col="blue", pch=1)
-  #points( x=x, y=grads.robust2, col=col2, pch=2)
-  
-  # lines(abline(h=y[which.min(abs(gradients - 0))], col="blue", lty=2))
-  # # Can show the gradient on the same chart (useful for debugging)
-  # points(x=x, y=((gradients*1000)+0.3), col=sapply(X=gradients, FUN=function(z) if(z>0) "blue" else "red"))
-  # #print(gradients)
-  # 
-  # 
-  
-
-}
-
-```
-
-
-Repeat but don't bother with 'robust' versions as the gradients are the same
-
-
-```{r s.model-all2, fig.width=9, fig.height=6 }
-options(scipen=100) # Less scientific notation please
-par(mfrow=c(length(all)/2,4))
-FORM.CUBE <- y ~ x + I(x^2) + I(x^3) # Cubic formula to fit to change in S index
-FORM.QUAD <- y ~ x + I(x^2) # Quadratic
-
-for (a in all) {
-  r <- a$r # This is the results of the msea test
-  name <- a$name # This is the name of the crime type
-  base <- a$base # Base and test points (not actually needed here)
-  test <- a$test
-  
-  # This code to graph and calculate gradients came from the 's.model' chunk.
-  # I've expanded the functions here to make it easier to play around with
-  
-  col1 <- "#d8b365"
-  col2 <- "#5ab4ac"
-  
-  x =        r$num.cells
-  y.normal = r$globalS
-  
-  # Plot points
-  plot(  x, y.normal, main=name, ylim=c(0,1), col="#999999", pch='o', 
-         xlab="Number of Cells", ylab="Global S Index")
-  
-  # Calculate models for points using FORM
-  
-  m.quad <- lm( FORM.QUAD, data=list("x"=x, "y"=y.normal) ) 
-  m.cube <- lm( FORM.CUBE, data=list("x"=x, "y"=y.normal) ) 
-  lines(x=x, y=predict(m.quad), col=col1, lwd=2)
-  lines(x=x, y=predict(m.cube), col=col2, lwd=2)
-  
-  # Calculate gradients
-  
-  # Function to differentiate. Do three versions - the quad, the cubic, and the weird one (cubic without x^3 term)
-  FUNC.cube <- function(x) coef(m.cube)[1] + (coef(m.cube)[2]*x) + (coef(m.cube)[3]*(x^2)) + (coef(m.cube)[4]*(x^3)) 
-  
-  FUNC.quad <- function(x) coef(m.quad)[1] + (coef(m.quad)[2]*x) + (coef(m.quad)[3]*(x^2))
-  
-  FUNC.weird <- function(x) coef(m.cube)[1] + (coef(m.cube)[2]*x) + (coef(m.cube)[3]*(x^2))
-  
-  stopifnot(! (FALSE %in% (predict(m.quad) == FUNC.quad(x)))) # Check function has been specified correctly
-  stopifnot(! (FALSE %in% (predict(m.cube) == FUNC.cube(x)))) # Check function has been specified correctly
-  
-  # Differentiate the functions
-  d.quad  <- Deriv( f = FUNC.quad,  x="x", nderiv = 1 )
-  d.cube  <- Deriv( f = FUNC.cube,  x="x", nderiv = 1 )
-  d.cube2 <- Deriv( f = FUNC.cube,  x="x", nderiv = 2 ) # Try second derivative of cube as well
-  d.weird <- Deriv( f = FUNC.weird, x="x", nderiv = 1 )
-  
-  grads.quad   <- vapply(X = x, FUN=d.quad,  FUN.VALUE = numeric(1))
-  grads.cube   <- vapply(X = x, FUN=d.cube,  FUN.VALUE = numeric(1))
-  grads.cube2  <- vapply(X = x, FUN=d.cube2, FUN.VALUE = numeric(1))
-  grads.weird  <- vapply(X = x, FUN=d.weird, FUN.VALUE = numeric(1))
-  
-    # Mark the points of the elbow (when the gradient is closest to zero)
-  
-  lines(abline(v=x[which.min(abs(grads.quad  - 0))], col=1, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-  lines(abline(v=x[which.min(abs(grads.cube  - 0))], col=2, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-  lines(abline(v=x[which.min(abs(grads.cube2 - 0))], col=3, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-  lines(abline(v=x[which.min(abs(grads.weird - 0))], col=4, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-
-
-  # Also plot the gradients as a separate graph
-  plot(   x=x, y=grads.quad,  col=1, pch=1, ylab="Gradient", main="Gradients",
-          ylim=c(min(grads.quad, grads.cube, grads.cube2, grads.weird),max(grads.quad, grads.cube, grads.cube2, grads.weird)))
-  points( x=x, y=grads.cube,  col=2, pch=1)
-  points( x=x, y=grads.cube2, col=3, pch=1)
-  points( x=x, y=grads.weird, col=4, pch=1)
-  
-  lines(abline(v=x[which.min(abs(grads.quad  - 0))], col=1, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-  lines(abline(v=x[which.min(abs(grads.cube  - 0))], col=2, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-  lines(abline(v=x[which.min(abs(grads.cube2 - 0))], col=3, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-  lines(abline(v=x[which.min(abs(grads.weird - 0))], col=4, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-  
-  legend("bottomleft", legend=c("Quad","Cube","Cube2","Weird"), pch="o", col=c(1,2,3,4))
-  
-}
-
-```
-
-These polynomials don't work so well for crimes that are more heavily clustered than residential burglary. Try some other functions: **log and sqrt**
-
-```{r s.model-all3, fig.width=9, fig.height=6 }
-options(scipen=100) # Less scientific notation please
-par(mfrow=c(length(all)/2,4))
-
-FORM.LOG  <- y ~ log(x)
-FORM.SQRT <- y ~ sqrt(x)
-FORM.CUBE <- y ~ x + I(x^2) + I(x^3) # Keep cubic for comparison
-
-col1 <- "#fc8d59"
-col2 <- "#555555"
-col3 <- "#99d594"
-
-for (a in all) {
-  r <- a$r # This is the results of the msea test
-  name <- a$name # This is the name of the crime type
-  base <- a$base # Base and test points (not actually needed here)
-  test <- a$test
-  
-  # This code to graph and calculate gradients came from the 's.model' chunk.
-  # I've expanded the functions here to make it easier to play around with
-  x =        r$num.cells
-  y.normal = r$globalS
-  
-  # Plot points
-  plot(  x, y.normal, main=name, ylim=c(0,1), col="#999999", pch='o', 
-         xlab="Number of Cells", ylab="Global S Index")
-  
-  # Calculate models for points using FORM
-  
-  m.cube <- lm( FORM.CUBE, data=list("x"=x, "y"=y.normal) ) 
-  m.sqrt <- lm( FORM.SQRT, data=list("x"=x, "y"=y.normal) ) 
-  m.log  <- lm( FORM.LOG,  data=list("x"=x, "y"=y.normal) )
-  lines(x=x, y=predict(m.cube), col=col1, lwd=2)
-  lines(x=x, y=predict(m.sqrt), col=col2, lwd=2)
-  lines(x=x, y=predict(m.log ), col=col3, lwd=2)
-  
-  # Check that they have the extected number of coefficients
-  stopifnot(length(coef(m.cube))==4)
-  stopifnot(length(coef(m.sqrt))==2)
-  stopifnot(length(coef(m.log ))==2)
-  
-  # Calculate gradients
-  
-  # Function to differentiate. Do three versions - the quad, the cubic, and the weird one (cubic without x^3 term)
-  FUNC.cube <- function(x) coef(m.cube)[1] + (coef(m.cube)[2]*x) + (coef(m.cube)[3]*(x^2)) + (coef(m.cube)[4]*(x^3))
-  FUNC.log  <- function(x) coef(m.log )[1] + (coef(m.log )[2]*log(x) )
-  FUNC.sqrt <- function(x) coef(m.sqrt)[1] + (coef(m.sqrt)[2]*sqrt(x) )
-  
-
-  #a <- data.frame(list("x"=x, "model"=predict(m.sqrt), "function"=FUNC.sqrt(x)) )
-  
-  stopifnot(! (FALSE %in% (predict(m.cube) == FUNC.cube(x)))) # Check function has been specified correctly
-  stopifnot(! (FALSE %in% (predict(m.sqrt) == FUNC.sqrt(x)))) # Check function has been specified correctly
-  stopifnot(! (FALSE %in% (predict(m.log ) == FUNC.log (x)))) # Check function has been specified correctly
-  
-  # Differentiate the functions
-  d.cube  <- Deriv( f = FUNC.cube, x="x", nderiv = 1 )
-  d.sqrt  <- Deriv( f = FUNC.sqrt, x="x", nderiv = 1 )
-  d.log   <- Deriv( f = FUNC.log,  x="x", nderiv = 1 )
-  
-  grads.cube <- vapply(X = x, FUN=d.cube,  FUN.VALUE = numeric(1))
-  grads.sqrt <- vapply(X = x, FUN=d.sqrt,  FUN.VALUE = numeric(1))
-  grads.log  <- vapply(X = x, FUN=d.log ,  FUN.VALUE = numeric(1))
-  
-  # Mark the points of the elbow (when the gradient is closest to zero)
-  
-  lines(abline(v=x[which.min(abs(grads.cube - 0))], col=col1, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-  lines(abline(v=x[which.min(abs(grads.sqrt - 0))], col=col2, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-  lines(abline(v=x[which.min(abs(grads.log  - 0))], col=col3, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-
-
-  # Also plot the gradients as a separate graph
-  plot(   x=x, y=grads.cube, col=col1, pch=1, ylab="Gradient", 
-          ylim=c(0,0.0001))
-          #ylim=c(min(grads.cube, grads.sqrt, grads.log),max(grads.cube, grads.sqrt, grads.log)))
-  points( x=x, y=grads.sqrt, col=col2, pch=1)
-  points( x=x, y=grads.log , col=col3, pch=1)
-  
-  #lines(abline(v=x[which.min(abs(grads.cube - 0))], col=col1, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-  #lines(abline(v=x[which.min(abs(grads.sqrt - 0))], col=col2, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-  #lines(abline(v=x[which.min(abs(grads.log  - 0))], col=col3, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-  
-  legend("topright", legend=c("cube", "sqrt", "log"), pch="o", col=c(col1,col2,col3))
-  
-}
-
-```
-
-Log model seems to do very well, but using the minimum gradient doesn't get the elbow.
-
-Delve into the gradients of the log model and its derivatives in more detail:
+Plot the log model and its derivatives.
 
 ```{r s.model-all-log, fig.width=9, fig.height=9 }
 options(scipen=1) # A bit of scientific notation is OK
@@ -1250,14 +766,6 @@ dev.off()
 
 _Could also do **Lorenze curves** at some of the resolutions (as per Eck's [review of crime concentrations](https://crimesciencejournal.springeropen.com/articles/10.1186/s40163-017-0070-4)).
 
-# Discussion
-
-XXXX
-
-# Conclusion
-
-XXXX
-
 
 
 # Other things that might be interesting
@@ -1343,7 +851,11 @@ warnings()
 
 Save the results for mapping or whatever:
 
-```{r save.results, warning=FALSE }
+XXXX This needs updating because now I don't actually generate the spatial grids when running the anlaysis because they take up too much room. The old version of this file did that:
+
+ - https://github.com/nickmalleson/sppt/blob/2692a3676fa6c58f9041b637b0f649ec4cc0b908/spatial_resolution.Rmd
+
+```{r save.results, warning=FALSE, eval=FALSE }
 # All of the R objects. Makes it easy to re-read the results
 save.image("spatial_resolution.RData")
 
