@@ -635,10 +635,29 @@ choro.legend("topright", sh=s.noalpha, cex=0.8)
 
 Graph the differences using the number of cells used.
 
+
 XXXX HERE
 
 GRAPH THE ERRORS, USING THE 4 AVAILABLE STATISTICS, FOR EACH CRIME TYPE
 
+
+
+```{r s.model-all-errors, fig.width=9, fig.height=9 }
+options(scipen=1) # A bit of scientific notation is OK
+error.stats <- c("rss", "r.squared", "rmse", "globalS", "globalS.robust") # The error stats. to use
+par(mfrow=c(length(all),length(error.stats))) # One plot for each error statistic
+
+for (a in all) {
+  r <- a$r # This is the results of the msea test
+  name <- a$name # This is the name of the crime type
+  
+  for (e in error.stats) {
+     x <- r$num.cells
+     y <- r[e]
+     plot(x,y, main=paste0(name,", ",e), xlab="Number of Cells", y=paste("Error (",e,")"))
+  }
+}
+```
 
 ### S Index
 
@@ -649,6 +668,10 @@ Prior research showed that a log model was the most successful at representing t
 Plot the log model and its derivatives.
 
 ```{r s.model-all-log, fig.width=9, fig.height=9 }
+
+range01 <- function(x){(x-min(x))/(max(x)-min(x))} # (https://stackoverflow.com/questions/5665599/range-standardization-0-to-1-in-r#5665644)
+
+
 options(scipen=1) # A bit of scientific notation is OK
 par(mfrow=c(length(all),4))
 
@@ -670,14 +693,8 @@ for (a in all) {
   x <- r$num.cells[START:END]
   y <- r$globalS[START:END]
   
-  # Plot points
-  plot(  x, y, main=name, ylim=c(0,1), col="#999999", pch='o', 
-         xlab="Number of Cells", ylab="Global S Index")
-  
   # Calculate models for points using FORM
-  
   m.log  <- lm( FORM.LOG,  data=list("x"=x, "y"=y) )
-  lines(x=x, y=predict(m.log ), col=1, lwd=2)
   
   # Check that they have the extected number of coefficients
   stopifnot(length(coef(m.log ))==2)
@@ -698,12 +715,18 @@ for (a in all) {
   grads.log2 <- vapply(X = x, FUN=d.log2, FUN.VALUE = numeric(1))
   grads.log3 <- vapply(X = x, FUN=d.log3, FUN.VALUE = numeric(1))
   
-  # Mark the points of the elbow (when the gradient is closest to zero)
-  #lines(abline(v=x[which.min(abs(grads.log  - 0))], col=col3, lty=2, lwd=2)) # Point at which the gradient is closest to 0
+  # Plot the original points
+  plot(  x, y, main=name, col="#999999", pch='o', #ylim=c(0,1)
+       xlab="Number of Cells", ylab="Global S Index")
+  abline(v=x[which.min(abs(grads.log1 - 1))], col="blue", lty=2, lwd=2) # Point at which the gradient is closest to 0
+  
+  # Add the model
+  lines(x=x, y=predict(m.log ), col=1, lwd=2)
 
-  # Also plot the gradients as a separate graph
-  plot( x=x, y=grads.log1, col=col1, pch=1, ylab="Gradient", main="1st Derivative", ylim=c(0,0.0005))
-  abline(v=x[which.min(abs(grads.log1 - 0))], col="blue", lty=2, lwd=2) # Point at which the gradient is closest to 0
+  
+  # Also plot the derivatives as a separate graph
+  plot( x=x, y=grads.log1, col=col1, pch=1, ylab="Gradient", main="1st Derivative",ylim=c(0,0.0005))
+  abline(v=x[which.min(abs(grads.log1 - 1))], col="blue", lty=2, lwd=2) # Point at which the gradient is closest to 0
   abline(h=0, lty=2, lwd=2) # y=0
   
   plot( x=x, y=grads.log2, col=col2, pch=1, ylab="Gradient", main="2nd Derivative", ylim=c(-0.0000005,0.0000005))
