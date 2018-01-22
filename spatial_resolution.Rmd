@@ -788,34 +788,34 @@ XXXX This needs updating because now I don't actually generate the spatial grids
 
  - https://github.com/nickmalleson/sppt/blob/2692a3676fa6c58f9041b637b0f649ec4cc0b908/spatial_resolution.Rmd
 
-```{r save.results, warning=FALSE, eval=FALSE }
+```{r save.results, warning=FALSE }
 # All of the R objects. Makes it easy to re-read the results
 save.image("spatial_resolution.RData")
 
-# The numbers used to make the graphs
-write.csv(
-  #data.frame("CellArea"=r$cell.areas, "NumCells"=r$num.cells, "RSS"=r$rss, "RSquared"=r$r.squared, "RMSE"=r$rmse,
-  #           "GlobalS" = r$globalS, "GlobalSRobust" = r$globalS.robust), 
-  data.frame("CellArea"=r.withzeros$cell.areas, "NumCells"=r.withzeros$num.cells, "RSS"=r.withzeros$rss,
-             "RSquared"=r.withzeros$r.squared, "RMSE"=r.withzeros$rmse,
-             "GlobalS" = r.withzeros$globalS, "GlobalSRobust" = r.withzeros$globalS.robust), 
-  file = "ROUT/results.csv")
-
-# Delete old shapefiles
-
-files <- list.files(path = "./ROUT", pattern = "result_")
-for (f in files) {
-  file.remove(paste0("./ROUT/",f))
-}
-
-# Write new ones, using the i and j counters from the nested loops to name the files
-for (x in 1:length(r.withzeros$results)) {
-  res <- r.withzeros$results[[x]]
-  i <-   r.withzeros$iteration[x]
-  j <-   r.withzeros$shift[x]
-  writeOGR(obj = res, dsn = "./ROUT", layer = paste0("result_",i,"_",j), 
-           driver = "ESRI Shapefile", overwrite_layer = TRUE)
-}
+# # The numbers used to make the graphs
+# write.csv(
+#   #data.frame("CellArea"=r$cell.areas, "NumCells"=r$num.cells, "RSS"=r$rss, "RSquared"=r$r.squared, "RMSE"=r$rmse,
+#   #           "GlobalS" = r$globalS, "GlobalSRobust" = r$globalS.robust), 
+#   data.frame("CellArea"=r.withzeros$cell.areas, "NumCells"=r.withzeros$num.cells, "RSS"=r.withzeros$rss,
+#              "RSquared"=r.withzeros$r.squared, "RMSE"=r.withzeros$rmse,
+#              "GlobalS" = r.withzeros$globalS, "GlobalSRobust" = r.withzeros$globalS.robust), 
+#   file = "ROUT/results.csv")
+# 
+# # Delete old shapefiles
+# 
+# files <- list.files(path = "./ROUT", pattern = "result_")
+# for (f in files) {
+#   file.remove(paste0("./ROUT/",f))
+# }
+# 
+# # Write new ones, using the i and j counters from the nested loops to name the files
+# for (x in 1:length(r.withzeros$results)) {
+#   res <- r.withzeros$results[[x]]
+#   i <-   r.withzeros$iteration[x]
+#   j <-   r.withzeros$shift[x]
+#   writeOGR(obj = res, dsn = "./ROUT", layer = paste0("result_",i,"_",j), 
+#            driver = "ESRI Shapefile", overwrite_layer = TRUE)
+# }
 
 
 ```

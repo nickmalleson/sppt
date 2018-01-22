@@ -63,7 +63,7 @@ if (!file.exists(ZIPFILENAME)) {
 
 Then read it in:
 
-```{r readData, cache=TRUE}
+```{r readData}
 
 # Unzip the files into the working directory
 zipfile <- unzip(ZIPFILENAME)
@@ -137,7 +137,7 @@ barplot(rowSums(table(all.crime$TYPE2, all.crime$YEAR)
 
 Finally split the big file up into different crimes and create a new variable for each crime type.
 
-```{r subsetRawData, cache=TRUE}
+```{r subsetRawData }
 # A directory for the crime data (in case it doesn't exist)
 dir.create(file.path("./ROUT", "crime"), showWarnings = FALSE)
 
