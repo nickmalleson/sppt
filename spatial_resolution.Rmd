@@ -107,16 +107,6 @@ library(Deriv)   # For calculating deriviatives
 
 library(sppt) # The spatial point pattern test library (see https://github.com/wsteenbeek/sppt for install instructions)
 
-# For the basic test:
-#datasource <- "../data/basic_test/" # The folder with the shapefiles
-
-# Some London data:
-#datasource <- "../data/london_burglary/" 
-
-# Some Vancouver data:
-datasource <- "./data-raw/vancouver_all/"
-
-#areas.layer <- "areas"  # The polygon boundary file
 ```
  
 # Data
@@ -553,9 +543,9 @@ rm(data1, data2, data3, data4)
 
 # Do all crime types at the same time.
 tmp <- mclapply(X = all, FUN = function(x) {
-  #msea(x[['base']], x[['test']], N=10, n.shifts=1, ignore.zeros = F, step=1)
-  msea(x[['base']], x[['test']], N=150, n.shifts=5, ignore.zeros = F, step=5,
-       return.sobject=FALSE, return.grids=FALSE)
+  msea(x[['base']], x[['test']], N=150, n.shifts=5, ignore.zeros = F, step=5, 
+       return.sobject=FALSE, # Don't return the s.objects, nor the spatial grids
+       return.grids=FALSE)   # to save memory
 }, mc.preschedule=FALSE)
 stopifnot(length(tmp)==4)
 # Store the results in the lists in an item called 'r'
@@ -564,13 +554,26 @@ for (i in 1:length(tmp)) {
 }
 rm(tmp)
 gc() # Do some garbage collection after deleting the big temporary objects (maybe not necessary)
+save.image('temp.RData')
+```
+
+Also run again once for BNER to do the fuzzy mapping. These results wont be used in the graph, so don't need to calculate the index as many times 
+
+(The code above doesn't actually return the spatial results grids because it takes a huge amount of memory (_will work, but needs a PC with > 20Gb memory or so or it becomes unusable_))
+
+```{r runMSEA-bner, cache=TRUE}
+p1 <- BNER[BNER$YEAR==2015,]
+p2 <- BNER[BNER$YEAR==2016,]
+bner.result <- msea(points1 = p1, points2 = p2,
+                    N=150, n.shifts=3, ignore.zeros = F, step=10,
+                    return.sobject=TRUE,
+                    return.grids=TRUE)
+save.image('temp.RData')
 ```
 
 ## Map the Local S Index
 
 Map the Local S for a few grids, just out of interest
-
-XXXX HERE - revise code below to work with the new 'all' list.
 
 ```{r map.globalS, fig.width=8, fig.height=6, eval=FALSE}
 statistic <- "localS" # The statistic to map
@@ -578,34 +581,34 @@ statistic <- "localS" # The statistic to map
 par(mfrow=c(2,2))
 
 for (i in 4:1) {
-  index <- round(length(r$results) / i )
+  index <- round(length(bner.result$results) / i )
   
   # Create the shading manually
   s <- list("breaks"=c(-0.5, 0, 0.5), "cols"=c("#fc8d59","#ffffbf", "#ffffbf","#99d594"))
   
-  choropleth(r$results[[index]], r$results[[index]]@data[,statistic], main=paste(statistic,i),
+  choropleth(bner.result$results[[index]], bner.result$results[[index]]@data[,statistic], main=paste(statistic,i),
              lty=0, shading = s)
-  choro.legend("topright", sh = s, cex=0.5)
+  points(p1, col='blue', cex=0.5)
+  points(p2, col='red',  cex=0.5)
+  choro.legend("topright", sh = s, cex=0.8)
 }
 ```
 
 Also do a fuzzy map of the difference in local S values.
 
-XXXX HERE - revise code below to work with the new 'all' list.
-
 ```{r map.globalS.fuzzy, fig.width=6, fig.height=5, eval=FALSE}
 # Maximum number of results we can map is 256 because transparency is represented by a two-digit hex
 # I actually set this as lower otherwise it doesn't work (all the colours add up to red)
 results.to.map <- NA
-if (length(r$results) > 50) {
-  results.to.map <- sample(x=1:length(r$results), size=50, replace = FALSE )
+if (length(bner.result$results) > 50) {
+  results.to.map <- sample(x=1:length(bner.result$results), size=50, replace = FALSE )
   print("Only mapping 50 of all grids ")
 } else {
-  results.to.map <- 1:(length(r$results)-1)
+  results.to.map <- 1:(length(bner.result$results)-1)
 }
 
 par(mfrow=c(1,1))
-last.result <- r$results[[length(r$results)]] # Convenience for list result generated (the smallest grid)
+last.result <- bner.result$results[[length(bner.result$results)]] # Convenience for list result generated (the smallest grid)
 
 # Shading
 s.noalpha <- list("breaks"=c(-0.5, 0, 0.5), "cols"=c("#fc8d59","#ffffbf", "#ffffbf","#99d594"))
@@ -617,7 +620,7 @@ choropleth(
   )
 
 for ( index in results.to.map) {
-  choropleth( r$results[[index]], r$results[[index]]@data[,statistic], shading = s, lty=0, add=TRUE )
+  choropleth( bner.result$results[[index]], bner.result$results[[index]]@data[,statistic], shading = s, lty=0, add=TRUE )
 }
 
 # For the legend, redo the shading as above but without the alpha (don't want the legend colours to be transparent)
@@ -628,12 +631,16 @@ choro.legend("topright", sh=s.noalpha, cex=0.8)
 
 ## Spatial Error Resolution
 
+### All Error Measures
+
 Graph the differences using the number of cells used.
 
 XXXX HERE
 
 GRAPH THE ERRORS, USING THE 4 AVAILABLE STATISTICS, FOR EACH CRIME TYPE
 
+
+### S Index
 
 Prior research showed that a log model was the most successful at representing the curve of Local S against resolution (measured by number of cells). This can be verified by running an earlier version of this file that included cells with and without zero:
 
@@ -648,7 +655,7 @@ par(mfrow=c(length(all),4))
 START <- 10 # Drop those first few really big cells
 END   <- length(all[[1]]$r$num.cells)
 
-FORM.LOG  <- y ~ log(x)
+FORM.LOG <- y ~ log(x) # A formula and function for log(x)
 
 col1 <- "#fc8d59"
 col2 <- "#555555"
@@ -677,8 +684,8 @@ for (a in all) {
   
   # Calculate gradients
   
-  # Function to differentiate. Do three versions - the quad, the cubic, and the weird one (cubic without x^3 term)
-  FUNC.sqrt <- function(x) coef(m.sqrt)[1] + (coef(m.sqrt)[2]*sqrt(x) )
+  # Function to differentiate.
+  FUNC.log <- function(x) coef(m.log)[1] + (coef(m.log)[2]*log(x) )
 
   stopifnot(! (FALSE %in% (predict(m.log ) == FUNC.log (x)))) # Check function has been specified correctly
   
