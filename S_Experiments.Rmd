@@ -174,9 +174,9 @@ d <- BNER
 
 # Prepare a vector of the proportions of data to sample (e.g. 0.99, 0.98, ... 0.01)
 proportion <- seq(from=0.99, to=0.01, by=-0.05)
-# Do four tests per proportion
+# Do a few tests per proportion
 prop <- c()
-for (i in 1:4) prop <- c(prop, proportion)
+for (i in 1:10) prop <- c(prop, proportion)
 proportion <- prop
 rm(prop)
 proportion <- sort(proportion) # Sort the proportions (e.g. 0.99, 0.99, 0.99, 0.99, 0.98, .... 0.01, 0.01.)
@@ -217,29 +217,30 @@ Plot the results:
 
 # Calculate lines of best fit for S Index against proportion (using quadratic equations)
 fit <-        lm ( y ~ x + I(x^2), data=data.frame("x"=proportion, "y"=globalS) ) 
-fit.robust <- lm ( y ~ x + I(x^2), data=data.frame("x"=proportion, "y"=globalS.robust) )
+#fit.robust <- lm ( y ~ x + I(x^2), data=data.frame("x"=proportion, "y"=globalS.robust) )
 
 preds <-        predict(fit,        data=data.frame("x"=proportion, "y"=globalS),        interval = 'confidence')
-preds.robust <- predict(fit.robust, data=data.frame("x"=proportion, "y"=globalS.robust), interval = 'confidence')
+#preds.robust <- predict(fit.robust, data=data.frame("x"=proportion, "y"=globalS.robust), interval = 'confidence')
 
-# Plot the results 
-plot(  x=proportion, y=unlist(globalS), main="BNER ALL", col=1, xlab="proportion", ylab="S")
+# Plot the results (the points in this first one get copied over so needs to be redone)
+plot(  x=proportion, y=unlist(globalS), main="Testing the S Index with varying sample size of test data", 
+       xlab="Proportion (sample size)", ylab="Global S")
 
-polygon(c(rev(proportion), proportion), c(rev(preds[ ,3]), preds[ ,2]), col = 1, border = NA)
-polygon(c(rev(proportion), proportion), c(rev(preds.robust[ ,3]), preds.robust[ ,2]), col = 2, border = NA)
+polygon(c(rev(proportion), proportion), c(rev(preds[ ,3]), preds[ ,2]), col = "grey", border = NA)
+#polygon(c(rev(proportion), proportion), c(rev(preds.robust[ ,3]), preds.robust[ ,2]), col = 2, border = NA)
 
 points(x=proportion, y=unlist(globalS), col=1)
-points(x=proportion, y=unlist(globalS.robust), col=2)
+#points(x=proportion, y=unlist(globalS.robust), col=2)
 
 # Models
-lines(x=proportion, y=predict(fit),        col=1, lty=1)
-lines(x=proportion, y=predict(fit.robust), col=2, lty=1)
+lines(x=proportion, y=predict(fit), col="red", lty=2)
+#lines(x=proportion, y=predict(fit.robust), col=2, lty=1)
 
 # Confidence intervals
 lines(proportion, preds[ ,3],        lty = 'dashed', col = 1)
 lines(proportion, preds[ ,2],        lty = 'dashed', col = 1)
-lines(proportion, preds.robust[ ,3], lty = 'dashed', col = 2)
-lines(proportion, preds.robust[ ,2], lty = 'dashed', col = 2)
+#lines(proportion, preds.robust[ ,3], lty = 'dashed', col = 2)
+#lines(proportion, preds.robust[ ,2], lty = 'dashed', col = 2)
 
 legend("topleft", legend=c("Noral", "Robust"), col=c(1,2), pch=1)
 

@@ -575,7 +575,7 @@ save.image('temp.RData')
 
 Map the Local S for a few grids, just out of interest
 
-```{r map.globalS, fig.width=8, fig.height=6, eval=FALSE}
+```{r map.globalS, fig.width=8, fig.height=6 }
 statistic <- "localS" # The statistic to map
 
 par(mfrow=c(2,2))
@@ -590,13 +590,13 @@ for (i in 4:1) {
              lty=0, shading = s)
   points(p1, col='blue', cex=0.5)
   points(p2, col='red',  cex=0.5)
-  choro.legend("topright", sh = s, cex=0.8)
+  choro.legend("topright", sh = s, cex=0.5)
 }
 ```
 
 Also do a fuzzy map of the difference in local S values.
 
-```{r map.globalS.fuzzy, fig.width=6, fig.height=5, eval=FALSE}
+```{r map.globalS.fuzzy, fig.width=6, fig.height=5}
 # Maximum number of results we can map is 256 because transparency is represented by a two-digit hex
 # I actually set this as lower otherwise it doesn't work (all the colours add up to red)
 results.to.map <- NA
@@ -772,80 +772,6 @@ dev.off()
 
 
 _Could also do **Lorenze curves** at some of the resolutions (as per Eck's [review of crime concentrations](https://crimesciencejournal.springeropen.com/articles/10.1186/s40163-017-0070-4)).
-
-
-
-# Other things that might be interesting
-
-## Sampling sizes and S Index
-
-See what happens to the Global S Index as the relative size of the base and test datasets change. Method as follows:
-
- 1. Load one dataset (BNER will do)
- 2. Sample 50:50
- 3. Run the S test
- 4. Change ratio and repeat
- 5. Graph s against proportion
- 
-```{r testS.Samples, eval=FALSE}
-par(mfrow=c(1,1))
-#van.poly <- readOGR("./data-raw/vancouver_all/areas.shp")
-
-#bner <- BNER[BNER$YEAR==2016,]
-bner <- BNER
-proportion <- seq(from=0.99, to=0.01, by=-0.05)
-# Do four tests per proportion
-prop <- c()
-for (i in 1:4) {
-   prop <- c(prop, proportion)
-}
-proportion <- prop
-rm(prop)
-proportion <- sort(proportion)
-
-s.objects <- mclapply(X=proportion, FUN=function(p) {
-  
-  samp <- sample(1:nrow(bner), size=nrow(bner)*p)
-  #base <- bner[samp, ]
-  base <- bner
-  test <- bner[samp,]
-  #stopifnot( (nrow(base) + nrow(test)) == nrow(bner) )
-  
-  s <- sppt(base_points.sp = base, test_points.sp = test, uoa.sp = van.poly)
-  return(s)
-})
-
-globalS <-        vapply(X=s.objects, FUN.VALUE = numeric(1), FUN=function(a) {a$globalS[[1]]})
-globalS.robust <- vapply(X=s.objects, FUN.VALUE = numeric(1), FUN=function(a) {a$globalS.robust[[1]]})
-
-fit <-        lm ( y ~ x + I(x^2), data=data.frame("x"=proportion, "y"=globalS) ) 
-fit.robust <- lm ( y ~ x + I(x^2), data=data.frame("x"=proportion, "y"=globalS.robust) )
-
-preds <-        predict(fit,        data=data.frame("x"=proportion, "y"=globalS),        interval = 'confidence')
-preds.robust <- predict(fit.robust, data=data.frame("x"=proportion, "y"=globalS.robust), interval = 'confidence')
-
-plot(  x=proportion, y=unlist(globalS), main="BNER ALL", col=1, xlab="proportion", ylab="S")
-
-polygon(c(rev(proportion), proportion), c(rev(preds[ ,3]), preds[ ,2]), col = 1, border = NA)
-polygon(c(rev(proportion), proportion), c(rev(preds.robust[ ,3]), preds.robust[ ,2]), col = 2, border = NA)
-
-points(x=proportion, y=unlist(globalS), col=1)
-points(x=proportion, y=unlist(globalS.robust), col=2)
-
-# Models
-lines(x=proportion, y=predict(fit),        col=1, lty=1)
-lines(x=proportion, y=predict(fit.robust), col=2, lty=1)
-
-# Confidence intervals
-lines(proportion, preds[ ,3],        lty = 'dashed', col = 1)
-lines(proportion, preds[ ,2],        lty = 'dashed', col = 1)
-lines(proportion, preds.robust[ ,3], lty = 'dashed', col = 2)
-lines(proportion, preds.robust[ ,2], lty = 'dashed', col = 2)
-
-legend("topleft", legend=c("Noral", "Robust"), col=c(1,2), pch=1)
-
-
-```
 
 
 # Other
