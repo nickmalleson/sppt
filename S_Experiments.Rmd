@@ -165,9 +165,9 @@ See what happens to the Global S Index as the relative size of the base and test
  4. Reduce the sample size and repeat (2)
  5. Graph S against the sample size (or proportion)
  
-```{r testS.Samples, eval=FALSE}
+```{r testS.Samples}
 par(mfrow=c(1,1))
-#van.poly <- readOGR("./data-raw/vancouver_all/areas.shp")
+van.poly <- readOGR("./data-raw/vancouver_all/areas.shp")
 
 #Define the data to use. All BNER data at the moment.
 d <- BNER
@@ -208,6 +208,12 @@ s.objects <- mclapply(X=proportion, FUN=function(p) {
 # global values from each test.
 globalS <-        vapply(X=s.objects, FUN.VALUE = numeric(1), FUN=function(a) {a$globalS[[1]]})
 globalS.robust <- vapply(X=s.objects, FUN.VALUE = numeric(1), FUN=function(a) {a$globalS.robust[[1]]})
+
+```
+
+Plot the results:
+
+```{r plot.results, fig.height=6, fig.width=9}
 
 # Calculate lines of best fit for S Index against proportion (using quadratic equations)
 fit <-        lm ( y ~ x + I(x^2), data=data.frame("x"=proportion, "y"=globalS) ) 
