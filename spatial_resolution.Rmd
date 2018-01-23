@@ -543,7 +543,7 @@ rm(data1, data2, data3, data4)
 
 # Do all crime types at the same time.
 tmp <- mclapply(X = all, FUN = function(x) {
-  msea(x[['base']], x[['test']], N=150, n.shifts=5, ignore.zeros = F, step=5, 
+  msea(x[['base']], x[['test']], N=200, n.shifts=5, ignore.zeros = F, step=5, 
        return.sobject=FALSE, # Don't return the s.objects, nor the spatial grids
        return.grids=FALSE)   # to save memory
 }, mc.preschedule=FALSE)
@@ -565,7 +565,7 @@ Also run again once for BNER to do the fuzzy mapping. These results wont be used
 p1 <- BNER[BNER$YEAR==2015,]
 p2 <- BNER[BNER$YEAR==2016,]
 bner.result <- msea(points1 = p1, points2 = p2,
-                    N=150, n.shifts=3, ignore.zeros = F, step=10,
+                    N=200, n.shifts=3, ignore.zeros = F, step=10,
                     return.sobject=TRUE,
                     return.grids=TRUE)
 save.image('temp.RData')
@@ -653,8 +653,9 @@ for (a in all) {
   
   for (e in error.stats) {
      x <- r$num.cells
-     y <- r[e]
-     plot(x,y, main=paste0(name,", ",e), xlab="Number of Cells", y=paste("Error (",e,")"))
+     y <- r[[e]]
+     ylim <- if (e=="globalS" | e=="globalS.robust") c(0,1) else NULL
+     plot(x,y, main=paste0(name,", ",e), xlab="Number of Cells", ylab=paste("Error (",e,")"), ylim=ylim)
   }
 }
 ```
