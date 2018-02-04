@@ -14,3 +14,4 @@ figure/
 cache/
 figs_for_paper/
 spatial_resolution.RData
+nohup.out

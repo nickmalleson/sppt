@@ -718,6 +718,12 @@ for (a in all) {
   grads.log2 <- vapply(X = x, FUN=d.log2, FUN.VALUE = numeric(1))
   grads.log3 <- vapply(X = x, FUN=d.log3, FUN.VALUE = numeric(1))
   
+  # Try to find the 'elbow'
+  elbow  <- x[min(which(grads.log1 < 0.00001))]
+  elbow2 <- x[min(which(grads.log1 < 0.0001))]
+  elbow3 <- x[min(which(grads.log1 < 0.001))]
+  elbow4 <- x[min(which(grads.log1 < 0.01))]
+
   # Plot the original points
   plot(  x, y, main=name, col="#999999", pch='o', #ylim=c(0,1)
        xlab="Number of Cells", ylab="Global S Index")
@@ -727,11 +733,20 @@ for (a in all) {
   lines(x=x, y=predict(m.log ), col=1, lwd=2)
   
   # Add horizonatal and vertical lines at the point that the first derivative is equal to beta (this is the 'elbow')
-  abline(v=beta, col="red")
+  #abline(v=beta, col="red")
+  
+  # Add vertical line at the elbow when beta becomes very small
+  #abline(v=elbow,  col="red")
+  abline(v=elbow,  col=1)
+  abline(v=elbow2,  col=2)
+  abline(v=elbow3,  col=3)
+  abline(v=elbow4,  col=4)
   
   # Add the equation to the graph
   #mtext(paste0("alpha = ",round(alpha,3),"\nbeta = ",round(beta,3) ), side=4, line=-8, las=2)
-  mtext(paste0("y = ",round(alpha,3)," + ",round(beta,3),"*log(x)" ), side=4, line=-15, las=2)
+  mtext(paste0("y = ",round(alpha,3)," + ",round(beta,3),"*ln(x)","\n",
+               "elbow"," = ", round(elbow,5)
+               ), side=4, line=-15, las=2)
   
 
   
