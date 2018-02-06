@@ -571,6 +571,18 @@ bner.result <- msea(points1 = p1, points2 = p2,
 #save.image('temp.RData')
 ```
 
+And run yet again to test on a very large number of iterations
+
+```{r runMSEA-test, cache=TRUE}
+p1 <- BNER[BNER$YEAR==2015,]
+p2 <- BNER[BNER$YEAR==2016,]
+test.result <- msea(points1 = p1, points2 = p2,
+                    N=2000, n.shifts=1, ignore.zeros = F, step=10,
+                    return.sobject=TRUE,
+                    return.grids=TRUE)
+```
+
+
 ## Map the Local S Index
 
 Map the Local S for a few grids, just out of interest
@@ -772,33 +784,25 @@ for (a in all) {
 ```
 
 
-It looks like the point at which the change in S-Index is < 0.00002 successfully captures the 'elbow' (the red line). Redo the charts above to make this clearer
+It looks like the point at which the change in S-Index is < 0.00002 successfully captures the 'elbow' (the red line). Redo the charts above to make this clearer.
 
-```{r model_and_elbow, fig.width=9, fig.height=7 }
+Begin by calculating the elbow and some other useful things for each crime
 
-range01 <- function(x){(x-min(x))/(max(x)-min(x))} # (https://stackoverflow.com/questions/5665599/range-standardization-0-to-1-in-r#5665644)
-
-options(scipen=1) # A bit of scientific notation is OK
-par(mfrow=c(length(all)/2, length(all)/2))
-
-START <- 10 # Drop those first few really big cells
-END   <- length(all[[1]]$r$num.cells)
+```{r calc_model_and_elbow}
 
 FORM.LOG <- y ~ log(x) # A formula and function for log(x)
 
-col1 <- "#fc8d59"
-col2 <- "#555555"
-col3 <- "#99d594"
+ELBOW_THRESHOLD <- 0.00002
 
-do.plot <- function(i) {
-  a <- all[[i]]
-  r <- a$r # This is the results of the msea test
-  name <- a$name # This is the name of the crime type
-  base <- a$base # Base and test points (not actually needed here)
-  test <- a$test
+for (i in 1:length(all)) {
+  r     <- all[[i]]$r   # This is the results of the msea test
+  name <- all[[i]]$name # This is the name of the crime type
+  #base <- all[[i]]$base # Base and test points (not actually needed here)
+  #test <- all[[i]]$test
   
   x <- r$num.cells[START:END]
   y <- r$globalS[START:END]
+  x.sqm <- r$cell.areas[START:END] # Square area of each cell (not used in the analysis)
   
   # Calculate models for points using FORM
   m.log  <- lm( FORM.LOG,  data=list("x"=x, "y"=y) )
@@ -820,37 +824,87 @@ do.plot <- function(i) {
   grads.log1 <- vapply(X = x, FUN=d.log1, FUN.VALUE = numeric(1))
   
   # Find the 'elbow' and store this as part of the list of all crimes
-  elbox.index <- min(which(grads.log1 < 0.00002)) # The index at which the elbow crosses the x axis
-  elbow  <- x[elbox.index] # The elbow itself (x axis value; number of cells)
-  all[[i]]$elbox.index <- elbox.index
-  all[[i]]$elbow <- elbow
+  elbox.index <- min(which(grads.log1 < ELBOW_THRESHOLD)) # The index at which the elbow crosses the x axis
+  elbow       <- x[elbox.index] # The elbow itself (x axis value; number of cells)
+  elbow.sqm   <- x.sqm[elbox.index] # The elbow in square area of cell units (rather than total number of cells)
   
   # The point at which the elbow hits the y axis
   elbow.y <- FUNC.log(elbow)
   
-  #lines(x, yint + pred1$y*x, col=3) # tangent (1st deriv. of spline at newx)
+  # Remember some things
+  all[[i]]$x <- x
+  all[[i]]$y <- y
+  all[[i]]$x.sqm <- x.sqm
   
+  all[[i]]$alpha <-alpha
+  all[[i]]$beta <- beta
   
+  all[[i]]$elbox.index <- elbox.index
+  all[[i]]$elbow <- elbow
+  all[[i]]$elbow.sqm <- elbow.sqm
+  all[[i]]$elbow.y <- elbow.y
+  
+  all[[i]]$d.log1 <- d.log1
+  all[[i]]$m.log <- m.log
+}
+
+```
+
+Make a table of the different elbow values using the current threshold of: `r ELBOW_THRESHOLD`.
+
+```{r model_and_elbow-table, results="asis"}
+
+elbow.table <- data.frame(
+    "Crime Type" = vapply(X = all, FUN.VALUE = character(1), FUN=function(a) a$name),
+    "Elbow - Number of Cells)" = vapply(X = all, FUN.VALUE = integer(1), FUN=function(a) as.integer(round(a$elbow) ) ) ,
+    "Elbow - Square Area)" = vapply(X = all, FUN.VALUE = integer(1), FUN=function(a) as.integer(round(a$elbow.sqm) ) )
+    )
+
+xtable(elbow.table, type="html")
+
+```
+A bar chart to make the table easier to perceive
+
+```{r model_and_elbow-barchart }
+barplot(height = elbow.table$Elbow...Square.Area., names.arg = elbow.table$Crime.Type, 
+        ylab="Elbow (square area of cells)", main = "Elbow values for different crime types" )
+
+# A pdf for the paper
+pdf(file="./figs_for_paper/model_and_elbow-barchart.pdf", width=7, height=4)
+barplot(height = elbow.table$Elbow...Square.Area., names.arg = elbow.table$Crime.Type, 
+        ylab="Square area of cells")
+dev.off()
+```
+
+Finally the full graph with tangents etc.
+
+```{r model_and_elbow-graph, fig.width=9, fig.height=7 }
+
+options(scipen=1) # A bit of scientific notation is OK
+par(mfrow=c(length(all)/2, length(all)/2))
+
+do.plot <- function(i) {
+  a <- all[[i]]
   # Plot the original points
-  plot(  x, y, main=name, col="#999999", pch='o', #ylim=c(0,1)
+  plot(  a$x, a$y, main=name, col="#999999", pch='o', #ylim=c(0,1)
        xlab="Number of Cells", ylab="Global S Index")
  
   # Plot the tangent 
-  yint <- elbow.y - (d.log1(elbow)*elbow) # Y intercept of the tangent
-  abline(yint, d.log1(elbow), lty="dashed", lwd=2) # The gradient is  d.log1(elbow)
+  yint <- a$elbow.y - (a$d.log1(a$elbow)*a$elbow) # Y intercept of the tangent
+  abline(yint, a$d.log1(a$elbow), lty="dashed", lwd=2) # The gradient is  d.log1(elbow)
   
   # Add the model
-  lines(x=x, y=predict(m.log ), col=1, lwd=2)
+  lines(x=x, y=predict(a$m.log), col=1, lwd=2)
   
   # Add vertical and horizontal line at the elbow and a point
-  abline(v=elbow,   col="red", lty="dashed")
-  abline(h=elbow.y, col="red", lty="dashed")
-  points(x=elbow, y=elbow.y, col="blue", pch=16, cex=2)
+  abline(v=a$elbow,   col="red", lty="dashed")
+  abline(h=a$elbow.y, col="red", lty="dashed")
+  points(x=a$elbow, y=a$elbow.y, col="blue", pch=16, cex=2)
   
   # Add the equation to the graph
-  mtext(paste0("y = ",round(alpha,3)," + ",round(beta,3),"*ln(x)","\n",
-               "elbow (x)"," = ", round(elbow,5),"\n",
-               "elbow (y)"," = ", round(elbow.y,5)
+  mtext(paste0("y = ",round(a$alpha,3)," + ",round(a$beta,3),"*ln(x)","\n",
+               "elbow (x)"," = ", round(a$elbow,5),"\n",
+               "elbow (y)"," = ", round(a$elbow.y,5)
                ), side=4, line=-15, las=2, cex=0.8)
   
   
