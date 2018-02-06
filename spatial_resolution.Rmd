@@ -790,77 +790,83 @@ col1 <- "#fc8d59"
 col2 <- "#555555"
 col3 <- "#99d594"
 
-do.plot <- function() {
+do.plot <- function(i) {
+  a <- all[[i]]
+  r <- a$r # This is the results of the msea test
+  name <- a$name # This is the name of the crime type
+  base <- a$base # Base and test points (not actually needed here)
+  test <- a$test
   
-  for (i in 1:length(all)) {
-    a <- all[[i]]
-    r <- a$r # This is the results of the msea test
-    name <- a$name # This is the name of the crime type
-    base <- a$base # Base and test points (not actually needed here)
-    test <- a$test
-    
-    x <- r$num.cells[START:END]
-    y <- r$globalS[START:END]
-    
-    # Calculate models for points using FORM
-    m.log  <- lm( FORM.LOG,  data=list("x"=x, "y"=y) )
-    
-    # Check that they have the extected number of coefficients
-    stopifnot(length(coef(m.log ))==2)
-    
-    # Calculate gradients
-    
-    # Function to differentiate.
-    alpha <- coef(m.log)[1]
-    beta <-  coef(m.log)[2]
-    FUNC.log <- function(x) alpha + beta*log(x)
+  x <- r$num.cells[START:END]
+  y <- r$globalS[START:END]
   
-    stopifnot(! (FALSE %in% (predict(m.log ) == FUNC.log (x)))) # Check function has been specified correctly
-    
-    # Differentiate the function (1st derivative)
-    d.log1 <- Deriv( f = FUNC.log,  x="x", nderiv = 1 )
-    grads.log1 <- vapply(X = x, FUN=d.log1, FUN.VALUE = numeric(1))
-    
-    # Find the 'elbow' and store this as part of the list of all crimes
-    elbox.index <- min(which(grads.log1 < 0.00002)) # The index at which the elbow crosses the x axis
-    elbow  <- x[elbox.index] # The elbow itself (x axis value; number of cells)
-    all[[i]]$elbox.index <- elbox.index
-    all[[i]]$elbow <- elbow
-    
-    # The point at which the elbox hits the y axis
-    elbow.y <- FUNC.log(elbow)
-    
-    # Also plot the tangent at the elbow
-    #XXXX
-    
+  # Calculate models for points using FORM
+  m.log  <- lm( FORM.LOG,  data=list("x"=x, "y"=y) )
   
-    # Plot the original points
-    plot(  x, y, main=name, col="#999999", pch='o', #ylim=c(0,1)
-         xlab="Number of Cells", ylab="Global S Index")
-    
-    # Add the model
-    lines(x=x, y=predict(m.log ), col=1, lwd=2)
-    
-    # Add vertical and horizontal line at the elbow
-    abline(v=elbow,   col="red", lty="dashed")
-    abline(h=elbow.y, col="red", lty="dashed")
-    
-    # Add the equation to the graph
-    mtext(paste0("y = ",round(alpha,3)," + ",round(beta,3),"*ln(x)","\n",
-                 "elbow (x)"," = ", round(elbow,5),"\n",
-                 "elbow (y)"," = ", round(elbow.y,5)
-                 ), side=4, line=-15, las=2)
-    
-    
-  }
+  # Check that they have the extected number of coefficients
+  stopifnot(length(coef(m.log ))==2)
+  
+  # Calculate gradients
+  
+  # Function to differentiate.
+  alpha <- coef(m.log)[1]
+  beta <-  coef(m.log)[2]
+  FUNC.log <- function(x) alpha + beta*log(x)
+
+  stopifnot(! (FALSE %in% (predict(m.log ) == FUNC.log (x)))) # Check function has been specified correctly
+  
+  # Differentiate the function (1st derivative)
+  d.log1 <- Deriv( f = FUNC.log,  x="x", nderiv = 1 )
+  grads.log1 <- vapply(X = x, FUN=d.log1, FUN.VALUE = numeric(1))
+  
+  # Find the 'elbow' and store this as part of the list of all crimes
+  elbox.index <- min(which(grads.log1 < 0.00002)) # The index at which the elbow crosses the x axis
+  elbow  <- x[elbox.index] # The elbow itself (x axis value; number of cells)
+  all[[i]]$elbox.index <- elbox.index
+  all[[i]]$elbow <- elbow
+  
+  # The point at which the elbow hits the y axis
+  elbow.y <- FUNC.log(elbow)
+  
+  #lines(x, yint + pred1$y*x, col=3) # tangent (1st deriv. of spline at newx)
+  
+  
+  # Plot the original points
+  plot(  x, y, main=name, col="#999999", pch='o', #ylim=c(0,1)
+       xlab="Number of Cells", ylab="Global S Index")
+ 
+  # Plot the tangent 
+  yint <- elbow.y - (d.log1(elbow)*elbow) # Y intercept of the tangent
+  abline(yint, d.log1(elbow), lty="dashed", lwd=2) # The gradient is  d.log1(elbow)
+  
+  # Add the model
+  lines(x=x, y=predict(m.log ), col=1, lwd=2)
+  
+  # Add vertical and horizontal line at the elbow and a point
+  abline(v=elbow,   col="red", lty="dashed")
+  abline(h=elbow.y, col="red", lty="dashed")
+  points(x=elbow, y=elbow.y, col="blue", pch=16, cex=2)
+  
+  # Add the equation to the graph
+  mtext(paste0("y = ",round(alpha,3)," + ",round(beta,3),"*ln(x)","\n",
+               "elbow (x)"," = ", round(elbow,5),"\n",
+               "elbow (y)"," = ", round(elbow.y,5)
+               ), side=4, line=-15, las=2, cex=0.8)
+  
+  
 }
 
 # A plot for knitr
-do.plot()
+for (i in 1:length(all)) {
+  do.plot(i)
+}
 
 # A pdf for the paper
 pdf(file="./figs_for_paper/model_and_elbow.pdf", width=9, height=7)
-do.plot()
+par(mfrow=c(length(all)/2, length(all)/2))
+for (i in 1:length(all)) {
+  do.plot(i)
+}
 dev.off()
 
 
@@ -868,49 +874,19 @@ dev.off()
 
 
 
-
 Do a single graph that we can use for the paper (when explaining how the method works). Use TOB because the model fits the data well (it's only for illustrative purposes so doesn't really matter.)
 
-_TODO add an elbow and tangent_
 
 ```{r example_error_graph_for_paper, fig.width=9, fig.height=6 }
 options(scipen=1) # A bit of scientific notation is OK
 par(mfrow=c(1,1))
 
-START <- 10 # Drop those first few really big cells
-END   <- length(all[[1]]$r$num.cells)
+do.plot(4)
 
-FORM.LOG  <- y ~ log(x)
-
-r <- all[[4]]$r # This is the TOB data
-stopifnot(all[[4]]$name == "TOB")
-
-x <- r$num.cells[START:END]
-y <- r$globalS[START:END]
-
-# Calculate models for points using FORM
-m.log  <- lm( FORM.LOG,  data=list("x"=x, "y"=y) )
-
-# Check that the model has the extected number of coefficients
-stopifnot(length(coef(m.log ))==2)
-
-# Plot
-plot(  x, y, main="Similarity of two point patterns at different resolutions", ylim=c(0.4,1), col="black", axes=FALSE,
-       xlab="Number of Cells (Resolution)", ylab="Global S Index (Similarity)")
-Axis(side=1, labels=FALSE)
-Axis(side=2, labels=FALSE)
-lines(x=x, y=predict(m.log ), col="red", lwd=2, lty=2)
-
-
-# And a pdf for the paper
-pdf(file="./figs_for_paper/example_error_graph_for_paper.pdf", width=6, height=8)
-plot( x, y, ylim=c(0.4,1), col="black", axes=FALSE, cex.lab = 1.2,
-      xlab="Number of Cells (Resolution)", ylab="Global S Index (Similarity)")
-Axis(side=1, labels=FALSE)
-Axis(side=2, labels=FALSE)
-lines(x=x, y=predict(m.log ), col="red", lwd=2, lty=2)
+pdf(file="./figs_for_paper/example_error_graph_for_paper.pdf", width=9, height=7)
+do.plot(4)
 dev.off()
-  
+
 
 ```
 
