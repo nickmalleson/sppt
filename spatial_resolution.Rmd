@@ -554,7 +554,7 @@ for (i in 1:length(tmp)) {
 }
 rm(tmp)
 gc() # Do some garbage collection after deleting the big temporary objects (maybe not necessary)
-save.image('temp.RData')
+#save.image('temp.RData')
 ```
 
 Also run again once for BNER to do the fuzzy mapping. These results wont be used in the graph, so don't need to calculate the index as many times 
@@ -568,7 +568,7 @@ bner.result <- msea(points1 = p1, points2 = p2,
                     N=200, n.shifts=3, ignore.zeros = F, step=10,
                     return.sobject=TRUE,
                     return.grids=TRUE)
-save.image('temp.RData')
+#save.image('temp.RData')
 ```
 
 ## Map the Local S Index
@@ -611,9 +611,12 @@ par(mfrow=c(1,1))
 last.result <- bner.result$results[[length(bner.result$results)]] # Convenience for list result generated (the smallest grid)
 
 # Shading
-s.noalpha <- list("breaks"=c(-0.5, 0, 0.5), "cols"=c("#fc8d59","#ffffbf", "#ffffbf","#99d594"))
+s.noalpha <- list("breaks"=c(-0.5, 0, 0.5), 
+                  #"cols"=c("#fc8d59","#ffffbf", "#ffffbf","#99d594"))
+                  "cols"=c("#FF0000","#00FF00", "#00FF00","#0000FF")) # r,g, b
 s         <- list("breaks"=c(-0.5, 0, 0.5), 
-                  "cols"=add.alpha(c("#fc8d59","#ffffbf", "#ffffbf","#99d594"), 1/length(results.to.map)))
+                  #"cols"=add.alpha(c("#fc8d59","#ffffbf", "#ffffbf","#99d594"), 1/length(results.to.map)))
+                  "cols"=add.alpha(c("#FF0000","#00FF00", "#00FF00","#0000FF"), 1/length(results.to.map))) # r, g, b
 
 choropleth(
   last.result, last.result@data[,statistic], shading = s, main=paste0("Fuzzy ",statistic), lty=0
@@ -633,14 +636,9 @@ choro.legend("topright", sh=s.noalpha, cex=0.8)
 
 ### All Error Measures
 
-Graph the differences using the number of cells used.
+Graph the differences, using the number of cells used, for each crime type.
 
-
-XXXX HERE
-
-GRAPH THE ERRORS, USING THE 4 AVAILABLE STATISTICS, FOR EACH CRIME TYPE
-
-
+_TODO_: Need to work out why the RSS and RMSE values decrease with the number of cells. They measure error, so I'd expect them to increase. Unless the larger number of 0s artifically reduce them.
 
 ```{r s.model-all-errors, fig.width=9, fig.height=9 }
 options(scipen=1) # A bit of scientific notation is OK
@@ -719,10 +717,10 @@ for (a in all) {
   grads.log3 <- vapply(X = x, FUN=d.log3, FUN.VALUE = numeric(1))
   
   # Try to find the 'elbow'
-  elbow  <- x[min(which(grads.log1 < 0.00001))]
-  elbow2 <- x[min(which(grads.log1 < 0.0001))]
-  elbow3 <- x[min(which(grads.log1 < 0.001))]
-  elbow4 <- x[min(which(grads.log1 < 0.01))]
+  elbow  <- x[min(which(grads.log1 < 0.00002))]
+  elbow2  <- x[min(which(grads.log1 < 0.00001))]
+  elbow3 <- x[min(which(grads.log1 < 0.0001))]
+  elbow4 <- x[min(which(grads.log1 < 0.001))]
 
   # Plot the original points
   plot(  x, y, main=name, col="#999999", pch='o', #ylim=c(0,1)
@@ -737,10 +735,10 @@ for (a in all) {
   
   # Add vertical line at the elbow when beta becomes very small
   #abline(v=elbow,  col="red")
-  abline(v=elbow,  col=1)
-  abline(v=elbow2,  col=2)
-  abline(v=elbow3,  col=3)
-  abline(v=elbow4,  col=4)
+  abline(v=elbow,  col="red")
+  abline(v=elbow2,  col="green")
+  abline(v=elbow3,  col="blue")
+  abline(v=elbow4,  col="orange")
   
   # Add the equation to the graph
   #mtext(paste0("alpha = ",round(alpha,3),"\nbeta = ",round(beta,3) ), side=4, line=-8, las=2)
@@ -774,9 +772,106 @@ for (a in all) {
 ```
 
 
+It looks like the point at which the change in S-Index is < 0.00002 successfully captures the 'elbow' (the red line). Redo the charts above to make this clearer
+
+```{r model_and_elbow, fig.width=9, fig.height=7 }
+
+range01 <- function(x){(x-min(x))/(max(x)-min(x))} # (https://stackoverflow.com/questions/5665599/range-standardization-0-to-1-in-r#5665644)
+
+options(scipen=1) # A bit of scientific notation is OK
+par(mfrow=c(length(all)/2, length(all)/2))
+
+START <- 10 # Drop those first few really big cells
+END   <- length(all[[1]]$r$num.cells)
+
+FORM.LOG <- y ~ log(x) # A formula and function for log(x)
+
+col1 <- "#fc8d59"
+col2 <- "#555555"
+col3 <- "#99d594"
+
+do.plot <- function() {
+  
+  for (i in 1:length(all)) {
+    a <- all[[i]]
+    r <- a$r # This is the results of the msea test
+    name <- a$name # This is the name of the crime type
+    base <- a$base # Base and test points (not actually needed here)
+    test <- a$test
+    
+    x <- r$num.cells[START:END]
+    y <- r$globalS[START:END]
+    
+    # Calculate models for points using FORM
+    m.log  <- lm( FORM.LOG,  data=list("x"=x, "y"=y) )
+    
+    # Check that they have the extected number of coefficients
+    stopifnot(length(coef(m.log ))==2)
+    
+    # Calculate gradients
+    
+    # Function to differentiate.
+    alpha <- coef(m.log)[1]
+    beta <-  coef(m.log)[2]
+    FUNC.log <- function(x) alpha + beta*log(x)
+  
+    stopifnot(! (FALSE %in% (predict(m.log ) == FUNC.log (x)))) # Check function has been specified correctly
+    
+    # Differentiate the function (1st derivative)
+    d.log1 <- Deriv( f = FUNC.log,  x="x", nderiv = 1 )
+    grads.log1 <- vapply(X = x, FUN=d.log1, FUN.VALUE = numeric(1))
+    
+    # Find the 'elbow' and store this as part of the list of all crimes
+    elbox.index <- min(which(grads.log1 < 0.00002)) # The index at which the elbow crosses the x axis
+    elbow  <- x[elbox.index] # The elbow itself (x axis value; number of cells)
+    all[[i]]$elbox.index <- elbox.index
+    all[[i]]$elbow <- elbow
+    
+    # The point at which the elbox hits the y axis
+    elbow.y <- FUNC.log(elbow)
+    
+    # Also plot the tangent at the elbow
+    #XXXX
+    
+  
+    # Plot the original points
+    plot(  x, y, main=name, col="#999999", pch='o', #ylim=c(0,1)
+         xlab="Number of Cells", ylab="Global S Index")
+    
+    # Add the model
+    lines(x=x, y=predict(m.log ), col=1, lwd=2)
+    
+    # Add vertical and horizontal line at the elbow
+    abline(v=elbow,   col="red", lty="dashed")
+    abline(h=elbow.y, col="red", lty="dashed")
+    
+    # Add the equation to the graph
+    mtext(paste0("y = ",round(alpha,3)," + ",round(beta,3),"*ln(x)","\n",
+                 "elbow (x)"," = ", round(elbow,5),"\n",
+                 "elbow (y)"," = ", round(elbow.y,5)
+                 ), side=4, line=-15, las=2)
+    
+    
+  }
+}
+
+# A plot for knitr
+do.plot()
+
+# A pdf for the paper
+pdf(file="./figs_for_paper/model_and_elbow.pdf", width=9, height=7)
+do.plot()
+dev.off()
+
+
+```
+
+
 
 
 Do a single graph that we can use for the paper (when explaining how the method works). Use TOB because the model fits the data well (it's only for illustrative purposes so doesn't really matter.)
+
+_TODO add an elbow and tangent_
 
 ```{r example_error_graph_for_paper, fig.width=9, fig.height=6 }
 options(scipen=1) # A bit of scientific notation is OK
