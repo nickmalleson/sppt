@@ -100,7 +100,7 @@ library(classInt) # Jenks natural breaks
 library(hydroGOF)   # Has an rmse() function
 library(xtable)   # For making latex/html tables
 library(parallel) # For ruonning things in parallel (e.g. mclapply())
-no_cores <- detectCores() / 4 # Detect the number of cores that are available and use half (often CPUs simulate 2 threads per core)
+no_cores <- detectCores() / 2 # Detect the number of cores that are available and use half (often CPUs simulate 2 threads per core)
 Sys.setenv(MC_CORES=no_cores) # Run on n cores (I'm not sure which of these
 options("mc.cores"=no_cores) # is correct).
 library(Deriv)   # For calculating deriviatives
@@ -252,6 +252,8 @@ The following defines a function that will run the method (_the R code has been 
 #'    to false can reduce the size of the results
 #' @param return.grids Whether to return the actual grids (spatial objects).  Default true. Setting
 #'    to false can reduce the size of the results
+#' @param The specific sppt function to run, i.e. one of `sppt` (default), `sppt_boot`, or `sppt_diff`
+#' @param ... Other arguments passed to the various sppt functions
 #'
 #' @return An list that encapsulates the results of the test as well as some other useful information:
 #' 
@@ -304,7 +306,7 @@ The following defines a function that will run the method (_the R code has been 
 #' @examples
 #' rmse(points1, points2)
 msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE, step=1, 
-                 return.sobject=TRUE, return.grids=TRUE) {
+                 return.sobject=TRUE, return.grids=TRUE, sppt_func = sppt, ... ) {
   
   # Check that the projections are the same
   if ( proj4string(points1) != proj4string(points2) ) {
@@ -314,163 +316,187 @@ msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE, step
     
   bb <- bbox(points1 + points1) # A bounding box around all points
   
-  # Store all grids (data frames) in a big long list
-  results <- list()
-  # Remember some other things that are useful later
-  cell.areas <- c() # The area of the cells
-  num.cells <- c()  # The number of cells in each iteration
-
-  # Remember the global errors associated with each grid
-  rss <- c() # Residual sum of squares
-  r.squared <- c()
-  rmse <- c()
-  globalS <- c()
-  globalS.robust <- c()
+  # Run each resolution in parallel. The output is a named list with all of the different elements in it
+  # resolutions is a list of all resolutions to run at
+  run.resolution <- function(resolutions) {
+    parallel.output <- list()
   
-  # Keep a link to the object that is returned from the call to sppt. Useful for debugging mostly.
-  s.object <- c()
-  
-  # Remember the iteration and shift numbers (these are the i and j in the nested loops)
-  iteration <- c()
-  shift <- c()
-  
-  # Create the grids - adapted from Brunsdon & Comber (2015, p150)
-  # Note: will actually start at i=2 which gives 2*2=4 cells (doesn't make sense to calculate error for 1 data point)
-  # but it's easier to start from i=1 and delete that result afterwards
-  counter <- 1 # for counting the total number of grids created (required for indexing)
-  for (i in seq(from=1,to=N,by=step)) {
-    # Cell size is the total width divided by the number of cells to draw so far (i)
-    cell.width <-  (bb[1,2] - bb[1,1]) / i
-    cell.height <- (bb[2,2] - bb[2,1]) / i
+    # Store all grids (data frames) in a big long list
+    parallel.output[["results"]] <- list()
     
-    # Make the bounding box slightly larger than necessary (by half a cell in each direction), 
-    # so when the grid is shifted there wont be any points outside
-    # It needs to be big enough so that it can have one extra ring of cells around it
-    bb.larger <- bb # The new bounding box
-    bb.larger["coords.x1","min"] <- bb["coords.x1","min"] - ( cell.width / 2  ) # Min x gets smaller
-    bb.larger["coords.x2","min"] <- bb["coords.x2","min"] - ( cell.height / 2 ) # Min y gets smaller
-    bb.larger["coords.x1","max"] <- bb["coords.x1","max"] + ( cell.width / 2  ) # Max x gets larger
-    bb.larger["coords.x2","max"] <- bb["coords.x2","max"] + ( cell.height / 2 ) # Max y gets larger
+    # Remember some other things that are useful later
+    parallel.output[["cell.areas"]] <- c() # The area of the cells
+    parallel.output[["num.cells"]] <- c()  # The number of cells in each iteration
+  
+    # Remember the global errors associated with each grid
+    parallel.output[["rss"]] <- c() # Residual sum of squares
+    parallel.output[["r.squared"]] <- c()
+    parallel.output[["rmse"]] <- c()
+    parallel.output[["globalS"]] <- c()
+    parallel.output[["globalS.robust"]] <- c()
     
-    # For each resolution, repeat a few times by slightly shifting the grid by a random amount in a random direction
-    for (j in 1:n.shifts) {
-      # Remember the cell area (useful later) (needs to be repeated for each shift)
-      cell.areas <- c(cell.areas, (cell.width * cell.height) )
-
-      # Chose random N-S and E-W directions to shift the grid in (using a random uniform distribution)
-      shift.x <- runif(n=1, min=-cell.width /2, max=cell.width /2 )
-      shift.y <- runif(n=1, min=-cell.height/2, max=cell.height/2)
-      
-      # Calculate the centre of the lower-left cell (the one with the smallest coordinates),
-      # taking into account the shift
-      centre.x <- bb.larger[1,1] + ( cell.width  / 2 ) + shift.x
-      centre.y <- bb.larger[2,1] + ( cell.height / 2 ) + shift.y
-      
-      # Create a grid  
-      grd <- GridTopology(
-        cellcentre.offset = c(centre.x, centre.y), # No offset, the grid will just cover all the points
-        cellsize = c(cell.width, cell.height),
-        cells.dim = c(i+1,i+1)
-      )
-      
-      number.of.cells <- (i+1) * (i+1) # Add an extra row and column to account for shifting 
-      num.cells <- c(num.cells, number.of.cells) # Remember the number of cells in this iteration
-      
-      # Convert the grid into a SpatialPolygonsDataFrame
-      spdf <- SpatialPolygonsDataFrame(
-        as.SpatialPolygons.GridTopology(grd),
-        data = data.frame(c(1:number.of.cells)),
-        match.ID = FALSE
-      )
-      proj4string(spdf) <- proj4string(points1)
-      names(spdf) <- "CellID" # Name the column
-      
-      # Aggregate the points
-      spdf@data$points1 <- poly.counts(points1, spdf)
-      spdf@data$points2 <- poly.counts(points2, spdf)
-      
-      # Drop cells with 0 for both counts?
-      if (ignore.zeros) {
-        spdf <- spdf[which(spdf@data$points1>0 | spdf@data$points2>0),]
-        stopifnot( length(which(spdf@data$points1==0 & spdf@data$points2==0)) == 0 )
-      }
-      
-      # Calculate percentages of points in each area (might be useful)
-      spdf@data$p1.pct <- 100 * spdf@data$points1 / sum(spdf@data$points1 )
-      spdf@data$p2.pct <- 100 * spdf@data$points2 / sum(spdf@data$points2 )
-      
-      # Calculate the errors 
-      
-      # Difference in the number of points
-      spdf@data$diff <- spdf@data$points1 - spdf@data$points2
-      
-      # Absolute difference
-      spdf@data$abs.diff <- abs(spdf@data$points1 - spdf@data$points2)
-      
-      # Absolute Difference in percentages
-      spdf@data$abs.pct.diff <- abs(spdf@data$p1.pct - spdf@data$p2.pct)
-      
-      # The Local S Index (slightly more convoluted)
-      s <- sppt(base_points.sp = points1, test_points.sp = points2, uoa.sp = spdf) # Calculate the index
-      
-      # Sanity check - check the sppt package calculates the same percentages as this code
-      stopifnot( identical(s$CELLID,spdf$CELLID) ) # Check the cells are in the same order (avoids having to merge on cell ID)
-      # XXXX For some reason the two methods aggregat the points very slightly differently. 
-      # Uncomment these below, debug, and do something like 'cbind(spdf$points1, s$NumBsePts)' to see the different counts
-      #stopifnot(identical(spdf$points1+spdf$points1, s$SumBseTstPts))
-      #stopifnot(identical(spdf@data$p1.pct, s$PctBsePts))
-      #stopifnot(identical(spdf@data$p2.pct, s$PctTstPts))
-      
-      # Useful Stats. associated with the S Index 
-      # (the whole S object is also returned later too, but these are more convenient to have direct access to)
-      spdf@data$localS            <- s@data$localS
-      spdf@data$localS.robust     <- s@data$localS.robust
-      spdf@data$similarity.robust <- s@data$similarity.robust
-      spdf@data$ConfLowP          <- s@data$ConfLowP
-      spdf@data$ConfUppP          <- s@data$ConfUppP
-      spdf@data$similarity        <- s@data$similarity
-      
-      # Store this result
-      # Formula below (from Nikee) wont work because we might step over some iterations in the inner loop
-      #grid.num <- ((i-1) * n.shifts) + j # Calculate total number of grids created so far
-      #results[[ grid.num ]] <- spdf
-      results[[ counter ]] <- spdf
-      counter <- counter + 1
-      
-      # Now calculte the global errors
-     
-      # RSS 
-      rss <- c(rss, sum( ( spdf@data$points1 - spdf@data$points2 )**2 ))
-      # R squared
-      r.squared <- c(r.squared, summary(lm(spdf@data$points1 ~ spdf@data$points2, data=spdf@data))$r.squared )
-      # RMSE
-      rmse <- c(rmse, rmse(spdf@data$points1, spdf@data$points2) )
-      # Global S Index (normal and robust). In globalS, each area has same value for global S, so take 1st row
-      # arbitrarily. For robust version, need to find the first row that isn't NA (hence use min()).
-      #. For
-      globalS <- c(globalS, s@data[1,"globalS"]        ) 
-      globalS.robust <- c(globalS.robust, s@data[min(which(!is.na(s@data$globalS.robust))),"globalS.robust"] )
-      
-      # Sometimes useful to keep a reference to the raw results returned by the sppt call (mostly for debugging)
-      s.object <- c(s.object, s)
-      
-      # Also useful to know which iteration number and grid shift this is (useful for naming grids)
-      iteration <- c(iteration, i)
-      shift <- c(shift, j)
-      
-      
-    } # for shifting grids
+    # Keep a link to the object that is returned from the call to sppt. Useful for debugging mostly.
+    parallel.output[["s.object"]] <- c()
     
-  } # for cell sizes
+    # Remember the iteration and shift numbers (these are the i and j in the nested loops)
+    parallel.output[["iteration"]] <- c()
+    parallel.output[["shift"]] <- c()
+    
+    # Create the grids - adapted from Brunsdon & Comber (2015, p150)
+    # Note: will actually start at i=2 which gives 2*2=4 cells (doesn't make sense to calculate error for 1 data point)
+    # but it's easier to start from i=1 and delete that result afterwards
+    for (i in resolutions) {
+      # Cell size is the total width divided by the number of cells to draw so far (i)
+      cell.width <-  (bb[1,2] - bb[1,1]) / i
+      cell.height <- (bb[2,2] - bb[2,1]) / i
+      
+      # Make the bounding box slightly larger than necessary (by half a cell in each direction), 
+      # so when the grid is shifted there wont be any points outside
+      # It needs to be big enough so that it can have one extra ring of cells around it
+      bb.larger <- bb # The new bounding box
+      bb.larger["coords.x1","min"] <- bb["coords.x1","min"] - ( cell.width / 2  ) # Min x gets smaller
+      bb.larger["coords.x2","min"] <- bb["coords.x2","min"] - ( cell.height / 2 ) # Min y gets smaller
+      bb.larger["coords.x1","max"] <- bb["coords.x1","max"] + ( cell.width / 2  ) # Max x gets larger
+      bb.larger["coords.x2","max"] <- bb["coords.x2","max"] + ( cell.height / 2 ) # Max y gets larger
+      
+      # For each resolution, repeat a few times by slightly shifting the grid by a random amount in a random direction
+      for (j in 1:n.shifts) {
+        # Remember the cell area (useful later) (needs to be repeated for each shift)
+        parallel.output[["cell.areas"]] <- c(parallel.output[["cell.areas"]], (cell.width * cell.height) )
+  
+        # Chose random N-S and E-W directions to shift the grid in (using a random uniform distribution)
+        shift.x <- runif(n=1, min=-cell.width /2, max=cell.width /2 )
+        shift.y <- runif(n=1, min=-cell.height/2, max=cell.height/2)
+        
+        # Calculate the centre of the lower-left cell (the one with the smallest coordinates),
+        # taking into account the shift
+        centre.x <- bb.larger[1,1] + ( cell.width  / 2 ) + shift.x
+        centre.y <- bb.larger[2,1] + ( cell.height / 2 ) + shift.y
+        
+        # Create a grid  
+        grd <- GridTopology(
+          cellcentre.offset = c(centre.x, centre.y), # No offset, the grid will just cover all the points
+          cellsize = c(cell.width, cell.height),
+          cells.dim = c(i+1,i+1)
+        )
+        
+        number.of.cells <- (i+1) * (i+1) # Add an extra row and column to account for shifting 
+        # Remember the number of cells in this iteration:
+        parallel.output[["num.cells"]] <- c(parallel.output[["num.cells"]], number.of.cells) 
+        
+        # Convert the grid into a SpatialPolygonsDataFrame
+        spdf <- SpatialPolygonsDataFrame(
+          as.SpatialPolygons.GridTopology(grd),
+          data = data.frame(c(1:number.of.cells)),
+          match.ID = FALSE
+        )
+        proj4string(spdf) <- proj4string(points1)
+        names(spdf) <- "CellID" # Name the column
+        
+        # Aggregate the points
+        spdf@data$points1 <- poly.counts(points1, spdf)
+        spdf@data$points2 <- poly.counts(points2, spdf)
+        
+        # Drop cells with 0 for both counts?
+        if (ignore.zeros) {
+          spdf <- spdf[which(spdf@data$points1>0 | spdf@data$points2>0),]
+          stopifnot( length(which(spdf@data$points1==0 & spdf@data$points2==0)) == 0 )
+        }
+        
+        # Calculate percentages of points in each area (might be useful)
+        spdf@data$p1.pct <- 100 * spdf@data$points1 / sum(spdf@data$points1 )
+        spdf@data$p2.pct <- 100 * spdf@data$points2 / sum(spdf@data$points2 )
+        
+        # Calculate the errors 
+        
+        # Difference in the number of points
+        spdf@data$diff <- spdf@data$points1 - spdf@data$points2
+        
+        # Absolute difference
+        spdf@data$abs.diff <- abs(spdf@data$points1 - spdf@data$points2)
+        
+        # Absolute Difference in percentages
+        spdf@data$abs.pct.diff <- abs(spdf@data$p1.pct - spdf@data$p2.pct)
+        
+        # The Local S Index (slightly more convoluted)
+        s <- sppt_func(points1, points2, spdf, ... ) # Calculate the index
+        
+        # Sanity check - check the sppt package calculates the same percentages as this code
+        stopifnot( identical(s$CELLID,spdf$CELLID) ) # Check the cells are in the same order (avoids having to merge on cell ID)
+        # XXXX For some reason the two methods aggregat the points very slightly differently. 
+        # Uncomment these below, debug, and do something like 'cbind(spdf$points1, s$NumBsePts)' to see the different counts
+        #stopifnot(identical(spdf$points1+spdf$points1, s$SumBseTstPts))
+        #stopifnot(identical(spdf@data$p1.pct, s$PctBsePts))
+        #stopifnot(identical(spdf@data$p2.pct, s$PctTstPts))
+        
+        # Useful Stats. associated with the S Index 
+        # (the whole S object is also returned later too, but these are more convenient to have direct access to)
+        spdf@data$localS            <- s@data$localS
+        spdf@data$localS.robust     <- s@data$localS.robust
+        spdf@data$similarity.robust <- s@data$similarity.robust
+        spdf@data$ConfLowP          <- s@data$ConfLowP
+        spdf@data$ConfUppP          <- s@data$ConfUppP
+        spdf@data$similarity        <- s@data$similarity
+        
+        # Store this result by appending it to the end of the list of results that we have so far
+        parallel.output[["results"]][[ length(parallel.output[["results"]]) + 1 ]] <- spdf
+        
+        # Now calculte the global errors
+       
+        # RSS 
+        parallel.output[["rss"]] <- c(parallel.output[["rss"]], sum( ( spdf@data$points1 - spdf@data$points2 )**2 ))
+        # R squared
+        parallel.output[["r.squared"]] <- c(parallel.output[["r.squared"]], 
+                                            summary(lm(spdf@data$points1 ~ spdf@data$points2, data=spdf@data))$r.squared )
+        # RMSE
+        parallel.output[["rmse"]] <- c(parallel.output[["rmse"]], rmse(spdf@data$points1, spdf@data$points2) )
+        # Global S Index (normal and robust). In globalS, each area has same value for global S, so take 1st row
+        # arbitrarily. For robust version, need to find the first row that isn't NA (hence use min()).
+        parallel.output[["globalS"]] <- c(parallel.output[["globalS"]], s@data[1,"globalS"]        ) 
+        parallel.output[["globalS.robust"]] <- c(parallel.output[["globalS.robust"]],
+                                                 s@data[min(which(!is.na(s@data$globalS.robust))),"globalS.robust"] )
+        
+        # Sometimes useful to keep a reference to the raw results returned by the sppt call (mostly for debugging)
+        parallel.output[["s.object"]] <- c(parallel.output[["s.object"]], s)
+        
+        # Also useful to know which iteration number and grid shift this is (useful for naming grids)
+        parallel.output[["iteration"]] <- c(parallel.output[["iteration"]], i)
+        parallel.output[["shift"]] <- c(parallel.output[["shift"]], j)
+        
+        
+      } # for shifting grids
+      
+    } # for cell sizes
+  
+    return(parallel.output)
+    
+  } # run.resolution function
+  
+  iterations <- seq(from=1,to=N,by=step)
+  pout <- mclapply(X=iterations, FUN= run.resolution )
+  print(iterations)
+  browser()
+  
+  # Now we have a big list with all of the results and other useful information in it.
+  
+  # The pout list has one item for each resolution. Merge these so that there is one long
+  # list with all the results for all resolutions
   
   
+  # Extract those separate parts into their own variables to make it easier to see what's going on
   
-  # TODO make parallel: I would need a function that used the outer loop index (i.e. each core will run each resolution)
-  # and returned a named list, with each of the components below included in the list. 
-  # Then the 'return the results' bit below can go through the results list, exrracting each component
-  # (an lapply) and combining them into single vectors
-  
-  
+  # Get each component from the results that came from each resolution
+  results <-        c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["results"]] ))
+  num.cells <-      c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["num.cells"]] ))
+  cell.areas <-     c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["cell.areas"]] ))
+  rss <-            c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["rss"]] ))
+  r.squared <-      c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["r.squared"]] ))
+  rmse <-           c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["rmse"]] ))
+  globalS <-        c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["globalS"]] ))
+  globalS.robust <- c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["globalS.robust"]] ))
+  s.object <-       c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["s.object"]] ))
+  iteration <-      c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["iteration"]] ))
+  shift <-          c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["shift"]] ))
   
   # Delete the results that used one single large cell as these don't mean anything
   results[[1]] <- NULL
@@ -543,9 +569,10 @@ rm(data1, data2, data3, data4)
 
 # Do all crime types at the same time.
 tmp <- mclapply(X = all, FUN = function(x) {
-  msea(x[['base']], x[['test']], N=200, n.shifts=5, ignore.zeros = F, step=5, 
+  msea(x[['base']], x[['test']], N=50, n.shifts=1, ignore.zeros = F, step=5, 
        return.sobject=FALSE, # Don't return the s.objects, nor the spatial grids
-       return.grids=FALSE)   # to save memory
+       return.grids=FALSE,  # to save memory
+       sppt_func = sppt) # the kind of sppt function to run
 }, mc.preschedule=FALSE)
 stopifnot(length(tmp)==4)
 # Store the results in the lists in an item called 'r'
@@ -553,6 +580,11 @@ for (i in 1:length(tmp)) {
   all[[i]][['r']] <- tmp[[i]]
 }
 rm(tmp)
+gc() # Do some garbage collection after deleting the big temporary objects (maybe not necessary)
+
+# 
+
+
 gc() # Do some garbage collection after deleting the big temporary objects (maybe not necessary)
 #save.image('temp.RData')
 ```
@@ -571,81 +603,49 @@ bner.result <- msea(points1 = p1, points2 = p2,
 #save.image('temp.RData')
 ```
 
+
+### (Large iteration test)
+
 And run yet again to test on a very large number of iterations
 
-```{r runMSEA-test, cache=TRUE}
+
+(_Not running, takes ages, do it outside of this Rmd_)
+
+```{r runMSEA-test, cache=TRUE, eval=FALSE}
 p1 <- BNER[BNER$YEAR==2015,]
 p2 <- BNER[BNER$YEAR==2016,]
 test.result <- msea(points1 = p1, points2 = p2,
-                    N=500, n.shifts=1, ignore.zeros = F, step=100,
+                    #N=500, n.shifts=1, ignore.zeros = F, step=10,
+                    N=100, n.shifts=5, ignore.zeros = F, step=5,
                     return.sobject=TRUE,
                     return.grids=TRUE)
 ```
 
-Plot that test: XXXX HERE
+Plot that test:
 
+```{r runMSEA-test-plot, cache=TRUE, eval=FALSE}
 
+error.stats <- c("rss", "r.squared", "rmse", "globalS", "globalS.robust") # The error stats. to use
+par(mfrow=c(2,length(error.stats))) # One plot for each error statisticm using both num.cells and square area
 
+#r <- test.result$results # This is the results of the msea test
 
-## Map the Local S Index
-
-Map the Local S for a few grids, just out of interest
-
-```{r map.globalS, fig.width=8, fig.height=6 }
-statistic <- "localS" # The statistic to map
-
-par(mfrow=c(2,2))
-
-for (i in 4:1) {
-  index <- round(length(bner.result$results) / i )
-  
-  # Create the shading manually
-  s <- list("breaks"=c(-0.5, 0, 0.5), "cols"=c("#fc8d59","#ffffbf", "#ffffbf","#99d594"))
-  
-  choropleth(bner.result$results[[index]], bner.result$results[[index]]@data[,statistic], main=paste(statistic,i),
-             lty=0, shading = s)
-  points(p1, col='blue', cex=0.5)
-  points(p2, col='red',  cex=0.5)
-  choro.legend("topright", sh = s, cex=0.5)
+for (type in c("num.cells", "cell.areas")) {
+  for (e in error.stats) {
+     x <- test.result[[type]]
+     y <- test.result[[e]]
+     #ylim <- if (e=="globalS" | e=="globalS.robust") c(0,1) else NULL
+     plot(x,y, main=paste0(name,", ",e), xlab="Number of Cells", ylab=paste("Error (",e,")"))#, ylim=ylim)
+  }
 }
+
+
+
 ```
 
-Also do a fuzzy map of the difference in local S values.
 
-```{r map.globalS.fuzzy, fig.width=6, fig.height=5}
-# Maximum number of results we can map is 256 because transparency is represented by a two-digit hex
-# I actually set this as lower otherwise it doesn't work (all the colours add up to red)
-results.to.map <- NA
-if (length(bner.result$results) > 50) {
-  results.to.map <- sample(x=1:length(bner.result$results), size=50, replace = FALSE )
-  print("Only mapping 50 of all grids ")
-} else {
-  results.to.map <- 1:(length(bner.result$results)-1)
-}
 
-par(mfrow=c(1,1))
-last.result <- bner.result$results[[length(bner.result$results)]] # Convenience for list result generated (the smallest grid)
 
-# Shading
-s.noalpha <- list("breaks"=c(-0.5, 0, 0.5), 
-                  #"cols"=c("#fc8d59","#ffffbf", "#ffffbf","#99d594"))
-                  "cols"=c("#FF0000","#00FF00", "#00FF00","#0000FF")) # r,g, b
-s         <- list("breaks"=c(-0.5, 0, 0.5), 
-                  #"cols"=add.alpha(c("#fc8d59","#ffffbf", "#ffffbf","#99d594"), 1/length(results.to.map)))
-                  "cols"=add.alpha(c("#FF0000","#00FF00", "#00FF00","#0000FF"), 1/length(results.to.map))) # r, g, b
-
-choropleth(
-  last.result, last.result@data[,statistic], shading = s, main=paste0("Fuzzy ",statistic), lty=0
-  )
-
-for ( index in results.to.map) {
-  choropleth( bner.result$results[[index]], bner.result$results[[index]]@data[,statistic], shading = s, lty=0, add=TRUE )
-}
-
-# For the legend, redo the shading as above but without the alpha (don't want the legend colours to be transparent)
-
-choro.legend("topright", sh=s.noalpha, cex=0.8)
-```
 
 
 ## Spatial Error Resolution
@@ -951,6 +951,70 @@ dev.off()
 
 
 _Could also do **Lorenze curves** at some of the resolutions (as per Eck's [review of crime concentrations](https://crimesciencejournal.springeropen.com/articles/10.1186/s40163-017-0070-4)).
+
+
+
+## Map the Local S Index
+
+Map the Local S for a few grids, just out of interest
+
+```{r map.globalS, fig.width=8, fig.height=6 }
+statistic <- "localS" # The statistic to map
+
+par(mfrow=c(2,2))
+
+for (i in 4:1) {
+  index <- round(length(bner.result$results) / i )
+  
+  # Create the shading manually
+  s <- list("breaks"=c(-0.5, 0, 0.5), "cols"=c("#fc8d59","#ffffbf", "#ffffbf","#99d594"))
+  
+  choropleth(bner.result$results[[index]], bner.result$results[[index]]@data[,statistic], main=paste(statistic,i),
+             lty=0, shading = s)
+  points(p1, col='blue', cex=0.5)
+  points(p2, col='red',  cex=0.5)
+  choro.legend("topright", sh = s, cex=0.5)
+}
+```
+
+Also do a fuzzy map of the difference in local S values.
+
+```{r map.globalS.fuzzy, fig.width=6, fig.height=5}
+# Maximum number of results we can map is 256 because transparency is represented by a two-digit hex
+# I actually set this as lower otherwise it doesn't work (all the colours add up to red)
+results.to.map <- NA
+if (length(bner.result$results) > 50) {
+  results.to.map <- sample(x=1:length(bner.result$results), size=50, replace = FALSE )
+  print("Only mapping 50 of all grids ")
+} else {
+  results.to.map <- 1:(length(bner.result$results)-1)
+}
+
+par(mfrow=c(1,1))
+last.result <- bner.result$results[[length(bner.result$results)]] # Convenience for list result generated (the smallest grid)
+
+# Shading
+s.noalpha <- list("breaks"=c(-0.5, 0, 0.5), 
+                  #"cols"=c("#fc8d59","#ffffbf", "#ffffbf","#99d594"))
+                  "cols"=c("#FF0000","#00FF00", "#00FF00","#0000FF")) # r,g, b
+s         <- list("breaks"=c(-0.5, 0, 0.5), 
+                  #"cols"=add.alpha(c("#fc8d59","#ffffbf", "#ffffbf","#99d594"), 1/length(results.to.map)))
+                  "cols"=add.alpha(c("#FF0000","#00FF00", "#00FF00","#0000FF"), 1/length(results.to.map))) # r, g, b
+
+choropleth(
+  last.result, last.result@data[,statistic], shading = s, main=paste0("Fuzzy ",statistic), lty=0
+  )
+
+for ( index in results.to.map) {
+  choropleth( bner.result$results[[index]], bner.result$results[[index]]@data[,statistic], shading = s, lty=0, add=TRUE )
+}
+
+# For the legend, redo the shading as above but without the alpha (don't want the legend colours to be transparent)
+
+choro.legend("topright", sh=s.noalpha, cex=0.8)
+```
+
+
 
 
 # Other
