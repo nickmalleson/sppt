@@ -474,18 +474,13 @@ msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE, step
   
   iterations <- seq(from=1,to=N,by=step)
   pout <- mclapply(X=iterations, FUN= run.resolution )
-  print(iterations)
-  browser()
+  #browser()
   
   # Now we have a big list with all of the results and other useful information in it.
-  
-  # The pout list has one item for each resolution. Merge these so that there is one long
-  # list with all the results for all resolutions
-  
-  
-  # Extract those separate parts into their own variables to make it easier to see what's going on
-  
-  # Get each component from the results that came from each resolution
+  # The pout list has one item for each resolution. Extract the separate parts into their
+  # own variables to make it easier to see what's going on. The code below is extra
+  # confusing because sapply returns a matrix (resolutions are rows, shifts are columns (or
+  # the other way round)) so c() is needed to vectorise the matrix.
   results <-        c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["results"]] ))
   num.cells <-      c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["num.cells"]] ))
   cell.areas <-     c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["cell.areas"]] ))
@@ -609,21 +604,20 @@ bner.result <- msea(points1 = p1, points2 = p2,
 And run yet again to test on a very large number of iterations
 
 
-(_Not running, takes ages, do it outside of this Rmd_)
+(_Not running, takes ages, do it outside of this Rmd. See script and associate data `large_iteration_test.R*`_)
 
-```{r runMSEA-test, cache=TRUE, eval=FALSE}
+```{r runMSEA-test, eval=FALSE}
 p1 <- BNER[BNER$YEAR==2015,]
 p2 <- BNER[BNER$YEAR==2016,]
 test.result <- msea(points1 = p1, points2 = p2,
-                    #N=500, n.shifts=1, ignore.zeros = F, step=10,
-                    N=100, n.shifts=5, ignore.zeros = F, step=5,
+                    N=500, n.shifts=1, ignore.zeros = F, step=10,
                     return.sobject=TRUE,
                     return.grids=TRUE)
 ```
 
 Plot that test:
 
-```{r runMSEA-test-plot, cache=TRUE, eval=FALSE}
+```{r runMSEA-test-plot, eval=FALSE}
 
 error.stats <- c("rss", "r.squared", "rmse", "globalS", "globalS.robust") # The error stats. to use
 par(mfrow=c(2,length(error.stats))) # One plot for each error statisticm using both num.cells and square area
@@ -634,8 +628,8 @@ for (type in c("num.cells", "cell.areas")) {
   for (e in error.stats) {
      x <- test.result[[type]]
      y <- test.result[[e]]
-     #ylim <- if (e=="globalS" | e=="globalS.robust") c(0,1) else NULL
-     plot(x,y, main=paste0(name,", ",e), xlab="Number of Cells", ylab=paste("Error (",e,")"))#, ylim=ylim)
+     ylim <- if (e=="globalS" | e=="globalS.robust") c(0,1) else NULL
+     plot(x,y, main=paste0(name,", ",e), xlab=type, ylab=paste("Error (",e,")"), ylim=ylim)
   }
 }
 

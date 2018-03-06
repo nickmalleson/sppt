@@ -300,7 +300,7 @@ test.result <- msea(points1 = p1, points2 = p2,
                     return.sobject=TRUE,
                     return.grids=TRUE)
 
-save(test.result, file="test_result.RData")
+save(test.result, file="large_iteration_test.RData")
 
 
 
