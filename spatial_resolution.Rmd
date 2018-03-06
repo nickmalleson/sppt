@@ -577,10 +577,14 @@ And run yet again to test on a very large number of iterations
 p1 <- BNER[BNER$YEAR==2015,]
 p2 <- BNER[BNER$YEAR==2016,]
 test.result <- msea(points1 = p1, points2 = p2,
-                    N=2000, n.shifts=1, ignore.zeros = F, step=10,
+                    N=500, n.shifts=1, ignore.zeros = F, step=100,
                     return.sobject=TRUE,
                     return.grids=TRUE)
 ```
+
+Plot that test: XXXX HERE
+
+
 
 
 ## Map the Local S Index
@@ -885,13 +889,14 @@ par(mfrow=c(length(all)/2, length(all)/2))
 
 do.plot <- function(i) {
   a <- all[[i]]
+  name <- a$name # This is the name of the crime type
   # Plot the original points
   plot(  a$x, a$y, main=name, col="#999999", pch='o', #ylim=c(0,1)
        xlab="Number of Cells", ylab="Global S Index")
  
   # Plot the tangent 
   yint <- a$elbow.y - (a$d.log1(a$elbow)*a$elbow) # Y intercept of the tangent
-  abline(yint, a$d.log1(a$elbow), lty="dashed", lwd=2) # The gradient is  d.log1(elbow)
+  abline(a = yint, b = a$d.log1(a$elbow), lty="dashed", lwd=2) # The gradient is  d.log1(elbow)
   
   # Add the model
   lines(x=x, y=predict(a$m.log), col=1, lwd=2)
