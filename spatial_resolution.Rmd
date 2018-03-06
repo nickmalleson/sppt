@@ -560,15 +560,22 @@ data2 <- list("base" = BNEC[BNEC$YEAR==2015,], "test"= BNEC[BNEC$YEAR==2016,], n
 data3 <- list("base" = TFV[TFV$YEAR==2015,], "test"= TFV[TFV$YEAR==2016,], name="TFV")
 data4 <- list("base" = TOB[TOB$YEAR==2015,], "test"= TOB[TOB$YEAR==2016,], name="TOB")
 all <- list(data1, data2, data3, data4)
+all.boot <- list(data1, data2, data3, data4) # Versions for the new types of sppt test
+all.diff <- list(data1, data2, data3, data4)
+
 rm(data1, data2, data3, data4)
 
-# Do all crime types at the same time.
-tmp <- mclapply(X = all, FUN = function(x) {
-  msea(x[['base']], x[['test']], N=50, n.shifts=1, ignore.zeros = F, step=5, 
+N <- 50
+N.SHIFTS <- 5
+STEP <- 5
+
+# Begin with the old sppt
+tmp <- mclapply(X = all, FUN = function(x) { # Do all crime types at the same time.
+  msea(x[['base']], x[['test']], N=N, n.shifts=N.SHIFTS, ignore.zeros = F, step=STEP, 
        return.sobject=FALSE, # Don't return the s.objects, nor the spatial grids
-       return.grids=FALSE,  # to save memory
-       sppt_func = sppt) # the kind of sppt function to run
-}, mc.preschedule=FALSE)
+       return.grids=FALSE,   # to save memory
+       sppt_func = sppt # the kind of sppt function to run
+  ) }, mc.preschedule=FALSE, mc.allow.recursive=TRUE)
 stopifnot(length(tmp)==4)
 # Store the results in the lists in an item called 'r'
 for (i in 1:length(tmp)) {
@@ -577,11 +584,33 @@ for (i in 1:length(tmp)) {
 rm(tmp)
 gc() # Do some garbage collection after deleting the big temporary objects (maybe not necessary)
 
-# 
-
-
+# Now the bootstrap version
+tmp <- mclapply(X = all, FUN = function(x) { # Do all crime types at the same time.
+  msea(x[['base']], x[['test']], N=N, n.shifts=N.SHIFTS, ignore.zeros = F, step=STEP, 
+       return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt_boot 
+  ) }, mc.preschedule=FALSE, mc.allow.recursive=TRUE)
+stopifnot(length(tmp)==4)
+# Store the results in the lists in an item called 'r'
+for (i in 1:length(tmp)) {
+  all.boot[[i]][['r']] <- tmp[[i]]
+}
+rm(tmp)
 gc() # Do some garbage collection after deleting the big temporary objects (maybe not necessary)
-#save.image('temp.RData')
+
+# Finish with the difference in proportions
+tmp <- mclapply(X = all, FUN = function(x) { # Do all crime types at the same time.
+  msea(x[['base']], x[['test']], N=N, n.shifts=N.SHIFTS, ignore.zeros = F, step=STEP, 
+       return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt_diff 
+  ) }, mc.preschedule=FALSE, mc.allow.recursive=TRUE)
+stopifnot(length(tmp)==4)
+# Store the results in the lists in an item called 'r'
+for (i in 1:length(tmp)) {
+  all.diff[[i]][['r']] <- tmp[[i]]
+}
+rm(tmp)
+gc() # Do some garbage collection after deleting the big temporary objects (maybe not necessary)
+
+save.image('temp.RData')
 ```
 
 Also run again once for BNER to do the fuzzy mapping. These results wont be used in the graph, so don't need to calculate the index as many times 
