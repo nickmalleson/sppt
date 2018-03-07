@@ -100,7 +100,7 @@ library(classInt) # Jenks natural breaks
 library(hydroGOF)   # Has an rmse() function
 library(xtable)   # For making latex/html tables
 library(parallel) # For ruonning things in parallel (e.g. mclapply())
-no_cores <- detectCores() / 2 # Detect the number of cores that are available and use half (often CPUs simulate 2 threads per core)
+no_cores <- detectCores() / 4 # Detect the number of cores that are available and use half (often CPUs simulate 2 threads per core)
 Sys.setenv(MC_CORES=no_cores) # Run on n cores (I'm not sure which of these
 options("mc.cores"=no_cores) # is correct).
 library(Deriv)   # For calculating deriviatives
@@ -565,9 +565,9 @@ all.diff <- list(data1, data2, data3, data4)
 
 rm(data1, data2, data3, data4)
 
-N <- 50
+N <- 200
 N.SHIFTS <- 5
-STEP <- 5
+STEP <- 10
 
 # Begin with the old sppt
 tmp <- mclapply(X = all, FUN = function(x) { # Do all crime types at the same time.
@@ -610,7 +610,7 @@ for (i in 1:length(tmp)) {
 rm(tmp)
 gc() # Do some garbage collection after deleting the big temporary objects (maybe not necessary)
 
-save.image('temp.RData')
+save.image('temp.RData') # In case it crashes later
 ```
 
 Also run again once for BNER to do the fuzzy mapping. These results wont be used in the graph, so don't need to calculate the index as many times 
@@ -633,7 +633,7 @@ bner.result <- msea(points1 = p1, points2 = p2,
 And run yet again to test on a very large number of iterations
 
 
-(_Not running, takes ages, do it outside of this Rmd. See script and associate data `large_iteration_test.R*`_)
+(_Not running, takes ages, do it outside of this Rmd. See script and associated data `large_iteration_test.R*`_)
 
 ```{r runMSEA-test, eval=FALSE}
 p1 <- BNER[BNER$YEAR==2015,]
@@ -677,7 +677,7 @@ for (type in c("num.cells", "cell.areas")) {
 
 Graph the differences, using the number of cells used, for each crime type.
 
-_TODO_: Need to work out why the RSS and RMSE values decrease with the number of cells. They measure error, so I'd expect them to increase. Unless the larger number of 0s artifically reduce them.
+It's a little odd that the RSS and RMSE values decrease with the number of cells. They measure error, so I'd expect them to increase. That said it is likely that the increasing number of zeros will artifically reduce them.
 
 ```{r s.model-all-errors, fig.width=9, fig.height=9 }
 options(scipen=1) # A bit of scientific notation is OK
@@ -697,7 +697,45 @@ for (a in all) {
 }
 ```
 
-### S Index
+
+
+### Comparing different Local S Index results
+
+Above we computed the S Index using the 'normal' method, as well as the new 'bootstrap' (`sppt_boot`) and 'proportional difference' (`sppt_diff`). Compare the results for each crime type now.
+
+```{r s.index-comparisons, fig.width=9, fig.height=6 }
+
+options(scipen=1) # A bit of scientific notation is OK
+par(mfrow=c(3,length(all))) # One plot for each S index
+
+# Make a list so we can loop over the different tests
+s.indices <- list(
+  "output"=list(all, all.boot, all.diff),
+  "name" = list("Normal", "Bootstrap", "Proportional Difference")
+  )
+
+for (i in 1:length(s.indices[["output"]])) { # For each of the three tests
+  for (a in s.indices[["output"]][[i]]) { # for each crime type in this test
+    r <- a$r # This is the results of the test
+    crime.type <- a$name # This is the name of the crime type
+    error.type <- s.indices[["name"]][[i]] # The kind of S Index
+     x <- r$num.cells
+     y <- r[["globalS"]] # The S Index (either normal, boot, or prop)
+     plot(x,y, main=paste0(error.type,": ",crime.type), 
+          xlab="Number of Cells", ylab=paste0(error.type), ylim=c(0,1))
+    
+  }
+}
+
+
+
+```
+
+
+
+
+
+### S Index Models
 
 Prior research showed that a log model was the most successful at representing the curve of Local S against resolution (measured by number of cells). This can be verified by running an earlier version of this file that included cells with and without zero:
 
