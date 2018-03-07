@@ -703,7 +703,7 @@ for (a in all) {
 
 Above we computed the S Index using the 'normal' method, as well as the new 'bootstrap' (`sppt_boot`) and 'proportional difference' (`sppt_diff`). Compare the results for each crime type now.
 
-```{r s.index-comparisons, fig.width=9, fig.height=6 }
+```{r s.index-comparisons1, fig.width=9, fig.height=6 }
 
 options(scipen=1) # A bit of scientific notation is OK
 par(mfrow=c(3,length(all))) # One plot for each S index
@@ -711,7 +711,8 @@ par(mfrow=c(3,length(all))) # One plot for each S index
 # Make a list so we can loop over the different tests
 s.indices <- list(
   "output"=list(all, all.boot, all.diff),
-  "name" = list("Normal", "Bootstrap", "Proportional Difference")
+  "name" = list("Normal", "Bootstrap", "Proportional Difference"),
+  "cols"=list("#fc8d59","#ffffbf","#99d594") # Colours used later
   )
 
 for (i in 1:length(s.indices[["output"]])) { # For each of the three tests
@@ -731,6 +732,59 @@ for (i in 1:length(s.indices[["output"]])) { # For each of the three tests
 
 ```
 
+Same again but all on the same graph _TODO and also show square area as well as num cells_
+
+```{r s.index-comparisons1, fig.width=8, fig.height=5 }
+
+# Make some lists so that the same plotting code can loop
+crime.types = vapply(X=all, FUN=function(x)x$name, FUN.VALUE = character(1)) # The crime types (4)
+test.results = list(all, all.boot, all.diff)
+cols  = c("#fc8d59","#333333","#99d594") # Colours used later
+names = c("Normal", "Bootstrap", "Proportional Difference")
+
+par(mfrow=c(2,length(crime.types))) # 2 rows, one for num.cells and square.area, 4 columns (one for each crime type)
+
+# Loop for num.cells graphs first (could do the x axis type in another loop, but the graphs are quite difference
+# so this is more hassle than it's worth)
+for (i in 1:length(crime.types)) { # For each crime type
+  crime.type <- crime.types[i]
+  for (j in 1:length(test.results)) { # For each test result
+    error.type <- names[j]
+    colour <- cols[j]
+    r <- test.results[[j]][[i]]$r # This is the results of the test for the crime type
+    x <- r$num.cells
+    y <- r[["globalS"]] # The S Index (either normal, boot, or prop)
+    if (j==1) {
+      plot(x,y, main=paste0(crime.type), xlab="Number of Cells", ylab="Similarity", ylim=c(0,1), col=colour, pch=1)
+      legend("bottomright", legend = names, col = cols, pch=1)
+    } else {
+      points(x,y, col=colour, pch=1)
+    }
+  }
+}
+
+# Repeat for square area
+for (i in 1:length(crime.types)) { # For each crime type
+  crime.type <- crime.types[i]
+  for (j in 1:length(test.results)) { # For each test result
+    error.type <- names[j]
+    colour <- cols[j]
+    r <- test.results[[j]][[i]]$r # This is the results of the test for the crime type
+    x <- r$cell.areas
+    y <- r[["globalS"]] # The S Index (either normal, boot, or prop)
+    if (j==1) {
+      plot(x,y, main=paste0(crime.type), xlab="Square area of cells", 
+           ylab="Similarity", ylim=c(0.4,1), xlim=c(0,80000), col=colour, pch=1)
+      legend("bottomright", legend = names, col = cols, pch=1)
+    } else {
+      points(x,y, col=colour, pch=1)
+    }
+  }
+}
+
+
+
+```
 
 
 
