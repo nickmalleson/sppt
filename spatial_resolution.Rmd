@@ -565,9 +565,9 @@ all.diff <- list(data1, data2, data3, data4)
 
 rm(data1, data2, data3, data4)
 
-N <- 200
+N <- 150
 N.SHIFTS <- 5
-STEP <- 10
+STEP <- 1
 
 # Begin with the old sppt
 tmp <- mclapply(X = all, FUN = function(x) { # Do all crime types at the same time.
@@ -613,52 +613,80 @@ gc() # Do some garbage collection after deleting the big temporary objects (mayb
 save.image('temp.RData') # In case it crashes later
 ```
 
-Also run again once for BNER to do the fuzzy mapping. These results wont be used in the graph, so don't need to calculate the index as many times 
+Also run again once for BNER and TOB to do the fuzzy mapping. These results wont be used in the graph, so don't need to calculate the index as many times 
 
 (The code above doesn't actually return the spatial results grids because it takes a huge amount of memory (_will work, but needs a PC with > 20Gb memory or so or it becomes unusable_))
 
 ```{r runMSEA-bner, cache=TRUE}
+N <- 150
+N.SHIFTS <- 1
+STEP <- 1
 p1 <- BNER[BNER$YEAR==2015,]
 p2 <- BNER[BNER$YEAR==2016,]
 bner.result <- msea(points1 = p1, points2 = p2,
-                    N=200, n.shifts=3, ignore.zeros = F, step=10,
+                    N=N, n.shifts=N.SHIFTS, ignore.zeros = F, step=STEP,
                     return.sobject=TRUE,
-                    return.grids=TRUE)
+                    return.grids=TRUE,
+                    sppt_func = sppt_boot # the kind of sppt function to run
+)
+p1 <- TOB[TOB$YEAR==2015,]
+p2 <- TOB[TOB$YEAR==2016,]
+tob.result <- msea(points1 = p1, points2 = p2,
+                    N=N, n.shifts=N.SHIFTS, ignore.zeros = F, step=STEP,
+                    return.sobject=TRUE,
+                    return.grids=TRUE,
+                    sppt_func = sppt_boot # the kind of sppt function to run
+)
 #save.image('temp.RData')
 ```
 
 
-### (Large iteration test)
+### Large iteration test
 
 And run yet again to test on a very large number of iterations
 
-
-(_Not running, takes ages, do it outside of this Rmd. See script and associated data `large_iteration_test.R*`_)
-
-```{r runMSEA-test, eval=FALSE}
+```{r runMSEA-test, cache=TRUE}
 p1 <- BNER[BNER$YEAR==2015,]
 p2 <- BNER[BNER$YEAR==2016,]
-test.result <- msea(points1 = p1, points2 = p2,
-                    N=500, n.shifts=1, ignore.zeros = F, step=10,
-                    return.sobject=TRUE,
-                    return.grids=TRUE)
+test.result.normal <- msea(points1 = p1, points2 = p2, N=500, n.shifts=1, ignore.zeros = F, 
+                           step=10, return.sobject=FALSE, return.grids=TRUE, sppt_func = sppt)
+test.result.boot   <- msea(points1 = p1, points2 = p2, N=500, n.shifts=1, ignore.zeros = F, 
+                           step=10, return.sobject=FALSE, return.grids=TRUE, sppt_func = sppt_boot)
+test.result.diff   <- msea(points1 = p1, points2 = p2, N=500, n.shifts=1, ignore.zeros = F, 
+                           step=10, return.sobject=FALSE, return.grids=TRUE, sppt_func = sppt_diff)
 ```
 
-Plot that test:
+Plot the results of the large iteration test:
 
-```{r runMSEA-test-plot, eval=FALSE}
+```{r runMSEA-test-plot, fig.width=5, fig.height=11}
 
 error.stats <- c("rss", "r.squared", "rmse", "globalS", "globalS.robust") # The error stats. to use
-par(mfrow=c(2,length(error.stats))) # One plot for each error statisticm using both num.cells and square area
+par(mfrow=c(6,length(error.stats))) # One plot for each error statistic using both num.cells and square area
 
 #r <- test.result$results # This is the results of the msea test
 
 for (type in c("num.cells", "cell.areas")) {
   for (e in error.stats) {
-     x <- test.result[[type]]
-     y <- test.result[[e]]
+     x <- test.result.normal[[type]]
+     y <- test.result.normal[[e]]
      ylim <- if (e=="globalS" | e=="globalS.robust") c(0,1) else NULL
-     plot(x,y, main=paste0(name,", ",e), xlab=type, ylab=paste("Error (",e,")"), ylim=ylim)
+     plot(x,y, main=paste0(name,", ",e,", NORM" ), xlab=type, ylab=paste("Error (",e,")"), ylim=ylim)
+  }
+}
+for (type in c("num.cells", "cell.areas")) {
+  for (e in error.stats) {
+     x <- test.result.boot[[type]]
+     y <- test.result.boot[[e]]
+     ylim <- if (e=="globalS" | e=="globalS.robust") c(0,1) else NULL
+     plot(x,y, main=paste0(name,", ",e,", BOOT"), xlab=type, ylab=paste("Error (",e,")"), ylim=ylim)
+  }
+}
+for (type in c("num.cells", "cell.areas")) {
+  for (e in error.stats) {
+     x <- test.result.diff[[type]]
+     y <- test.result.diff[[e]]
+     ylim <- if (e=="globalS" | e=="globalS.robust") c(0,1) else NULL
+     plot(x,y, main=paste0(name,", ",e,", DIFF"), xlab=type, ylab=paste("Error (",e,")"), ylim=ylim)
   }
 }
 
@@ -703,37 +731,6 @@ for (a in all) {
 
 Above we computed the S Index using the 'normal' method, as well as the new 'bootstrap' (`sppt_boot`) and 'proportional difference' (`sppt_diff`). Compare the results for each crime type now.
 
-```{r s.index-comparisons1, fig.width=9, fig.height=6 }
-
-options(scipen=1) # A bit of scientific notation is OK
-par(mfrow=c(3,length(all))) # One plot for each S index
-
-# Make a list so we can loop over the different tests
-s.indices <- list(
-  "output"=list(all, all.boot, all.diff),
-  "name" = list("Normal", "Bootstrap", "Proportional Difference"),
-  "cols"=list("#fc8d59","#ffffbf","#99d594") # Colours used later
-  )
-
-for (i in 1:length(s.indices[["output"]])) { # For each of the three tests
-  for (a in s.indices[["output"]][[i]]) { # for each crime type in this test
-    r <- a$r # This is the results of the test
-    crime.type <- a$name # This is the name of the crime type
-    error.type <- s.indices[["name"]][[i]] # The kind of S Index
-     x <- r$num.cells
-     y <- r[["globalS"]] # The S Index (either normal, boot, or prop)
-     plot(x,y, main=paste0(error.type,": ",crime.type), 
-          xlab="Number of Cells", ylab=paste0(error.type), ylim=c(0,1))
-    
-  }
-}
-
-
-
-```
-
-Same again but all on the same graph _TODO and also show square area as well as num cells_
-
 ```{r s.index-comparisons1, fig.width=8, fig.height=5 }
 
 # Make some lists so that the same plotting code can loop
@@ -741,6 +738,9 @@ crime.types = vapply(X=all, FUN=function(x)x$name, FUN.VALUE = character(1)) # T
 test.results = list(all, all.boot, all.diff)
 cols  = c("#fc8d59","#333333","#99d594") # Colours used later
 names = c("Normal", "Bootstrap", "Proportional Difference")
+
+s.type = "globalS.robust" # Whether to use robust or non-robust
+#s.type = "globalS"
 
 par(mfrow=c(2,length(crime.types))) # 2 rows, one for num.cells and square.area, 4 columns (one for each crime type)
 
@@ -753,10 +753,11 @@ for (i in 1:length(crime.types)) { # For each crime type
     colour <- cols[j]
     r <- test.results[[j]][[i]]$r # This is the results of the test for the crime type
     x <- r$num.cells
-    y <- r[["globalS"]] # The S Index (either normal, boot, or prop)
+    y <- r[[s.type]] # The S Index (either normal, boot, or prop)
     if (j==1) {
-      plot(x,y, main=paste0(crime.type), xlab="Number of Cells", ylab="Similarity", ylim=c(0,1), col=colour, pch=1)
-      legend("bottomright", legend = names, col = cols, pch=1)
+      plot(x,y, main=paste0(crime.type), xlab="Number of Cells", ylab="Similarity", 
+          col=colour, pch=1, ylim=c(0,1))#, xlim=c(0,10000))
+      #legend("bottomright", legend = names, col = cols, pch=1)
     } else {
       points(x,y, col=colour, pch=1)
     }
@@ -771,18 +772,19 @@ for (i in 1:length(crime.types)) { # For each crime type
     colour <- cols[j]
     r <- test.results[[j]][[i]]$r # This is the results of the test for the crime type
     x <- r$cell.areas
-    y <- r[["globalS"]] # The S Index (either normal, boot, or prop)
+    y <- r[[s.type]] # The S Index (either normal, boot, or prop)
     if (j==1) {
-      plot(x,y, main=paste0(crime.type), xlab="Square area of cells", 
-           ylab="Similarity", ylim=c(0.4,1), xlim=c(0,80000), col=colour, pch=1)
-      legend("bottomright", legend = names, col = cols, pch=1)
+      plot(x,y, main=paste0(crime.type), xlab="Square area of cells", ylab="Similarity", 
+           col=colour, pch=1, ylim=c(0,1), xlim=c(0,2000000) )#xlim=c(0,80000))
+      legend("bottomleft", legend = names, col = cols, pch=1)
     } else {
       points(x,y, col=colour, pch=1)
     }
   }
 }
 
-
+# Tidy up
+rm(crime.types,test.results,cols, names, s.type)
 
 ```
 
