@@ -19,7 +19,7 @@ library(classInt) # Jenks natural breaks
 library(hydroGOF)   # Has an rmse() function
 library(xtable)   # For making latex/html tables
 library(parallel) # For ruonning things in parallel (e.g. mclapply())
-no_cores <- detectCores() # Detect the number of cores that are available and use half (often CPUs simulate 2 threads per core)
+no_cores <- detectCores() / 2 # Detect the number of cores that are available and use half (often CPUs simulate 2 threads per core)
 Sys.setenv(MC_CORES=no_cores) # Run on n cores (I'm not sure which of these
 options("mc.cores"=no_cores) # is correct).
 library(Deriv)   # For calculating deriviatives

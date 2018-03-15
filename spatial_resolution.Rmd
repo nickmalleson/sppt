@@ -100,16 +100,21 @@ library(classInt) # Jenks natural breaks
 library(hydroGOF)   # Has an rmse() function
 library(xtable)   # For making latex/html tables
 library(parallel) # For ruonning things in parallel (e.g. mclapply())
-no_cores <- detectCores() / 2 # Detect the number of cores that are available and use half (often CPUs simulate 2 threads per core)
+#no_cores <- detectCores() / 3  # Detect the number of cores that are available and use half (often CPUs simulate 2 threads per core)
+no_cores <- 4 # TEMP TO STOP MEMORY HOGGING
 Sys.setenv(MC_CORES=no_cores) # Run on n cores (I'm not sure which of these
 options("mc.cores"=no_cores) # is correct).
 library(Deriv)   # For calculating deriviatives
+library(leaflet) # For doing interactive maps
+
 
 library(sppt) # The spatial point pattern test library (see https://github.com/wsteenbeek/sppt for install instructions)
 
 ```
  
 # Data
+
+## Crime data
 
 We use publicly-available Vancouver crime data, available [here](http://data.vancouver.ca/datacatalogue/crime-data.htm).
 
@@ -219,6 +224,53 @@ for (type in crime.types2) {
 
 ```
 
+## Land area data
+
+In the analysis we want to mask cells that aren't over land as these will distort the results. The [Baseline Thematic Mapping Present Land Use Version 1 Spatial Layer](https://catalogue.data.gov.bc.ca/dataset/baseline-thematic-mapping-present-land-use-version-1-spatial-layer) from the [BC Data Catalogue](https://catalogue.data.gov.bc.ca/dataset) has a suitable dataset that can be used for masking. All land with `PLU_LABEL=Urban` will be included. These ares are defined as: 
+
+ - "All compact settlements including built up areas of cities, towns and villages as well as isolated units away from settlements such as manufacturing plants, rail yards and military camps. In most cases residential use will predominate in these areas."
+ 
+I have downloaded the entire BC dataset to: `./data-raw/BTM_PRESENT_LAND_USE_V1_SVW/` and then also made a smaller version around Vancouver called `BTM_PLU_V1_polygon-cut.shp` (R struggles to read the full file)
+ 
+Note that this this excludes Stanley Park, which will mean that some theft of bike / vehicle crimes are disregarded, but the numbers are very small so it wont overly influence the results.
+
+```{r readLandUseData, cache=TRUE}
+
+# Unzip the files into the working directory
+ZIPFILENAME = "./data-raw/BTM_PRESENT_LAND_USE_V1_SVW.zip"
+zipfile <- unzip(ZIPFILENAME)
+
+# Read the shapefile
+bc.land.use <- readOGR(dsn="./BTM_PRESENT_LAND_USE_V1_SVW/", layer = "BTM_PLU_V1_polygon-cut")
+
+# Delete the extracted file
+unlink(zipfile)
+unlink("BTM_PRESENT_LAND_USE_V1_SVW", recursive = TRUE) # a left over directory
+
+# Extract the urban land features (these mark the areas that will be included in the analysis)
+bc.urban <- bc.land.use[bc.land.use$PLU_LABEL=="Urban",]
+
+# Project it
+bc.urban <- spTransform(bc.urban, CRSobj = CRS(proj4string(all.crime)))
+proj4string(bc.urban) <- proj4string(all.crime)
+
+## Get rid of areas that don't intersect any crimes (mostly for efficiency). Use st_intersects
+## (https://gis.stackexchange.com/questions/245136/how-to-subset-point-data-by-outside-of-polygon-data-in-r)
+## All polygons that intersect a point (if not the the output from st_intersects is an integer(0))
+#b = sapply(st_intersects(bc.urban, all.crime),function(x){length(x)>0}) 
+## Subset polygons
+#bc.urban[b] <- bc.urban[b]
+
+rm(ZIPFILENAME, bc.land.use)
+```
+
+## Areas data
+
+Finally it is useful to have some administrative boundaries. These aren't used in the analysis, but are good for displaying results.
+
+```{r readBondariesData }
+vancouver.boundaries <- readOGR(dsn="data-raw/vancouver_all", layer = "areas")
+```
 # The Multi-Scale Error Assessment Method (MSEA)
 
 The method works as follows:
@@ -244,6 +296,8 @@ The following defines a function that will run the method (_the R code has been 
 #'    error is calculated will be 20*20 cells. Note: the algorithm starts at i=2 which gives 2*2=4 cells as 
 #'    the most coarse resolution (doesn't make sense to calculate error for 1 data point)
 #' @param n.shifts The number of times to shift the grid at each resolution
+#' @param mask An optional SpatialPolygons* that contains the areas we are interested in. Any cells that do not intersect
+#'   one of these areas will be excluded.
 #' @param ignore.zeros Whether to remove cells with no crimes in them (the abundance of zeros at higher resolutions can distort the statistics)
 #' @param step The number of steps in between two resolutions before re-calculating the grid. Default 1, i.e. 
 #'    every sub-division between 1 and N will be calculated. If \code{step} were \code{2}, then only every
@@ -306,7 +360,7 @@ The following defines a function that will run the method (_the R code has been 
 #'
 #' @examples
 #' rmse(points1, points2)
-msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE, step=1, 
+msea <- function(points1, points2, N=20, n.shifts = 10, mask=NULL, ignore.zeros=FALSE, step=1, 
                  return.sobject=TRUE, return.grids=TRUE, run.parallel=TRUE,
                  sppt_func = sppt, ... ) {
   
@@ -394,6 +448,18 @@ msea <- function(points1, points2, N=20, n.shifts = 10, ignore.zeros=FALSE, step
         )
         proj4string(spdf) <- proj4string(points1)
         names(spdf) <- "CellID" # Name the column
+        
+        # Remove any cells that don't intersect the mask?
+        if (!is.null(mask)) {
+          #browser()
+          # Join spdf to bc.urban. Returns rows for all spdf, which will be NA if there was no join
+          a <- over(spdf, mask)
+          # Check some cells overlap, otherwise something has almost certainly gone wrong
+          stopifnot(length(which(!is.na(a$PLU_LABEL))  ) > 0 )
+          # Remove those that have NA for the PLU_LABEL (could have chosen any column)
+          spdf <- spdf[which(!is.na(a$PLU_LABEL)),]
+          rm(a)
+        }
         
         # Aggregate the points
         spdf@data$points1 <- poly.counts(points1, spdf)
@@ -579,17 +645,19 @@ all.diff <- list(data1, data2, data3, data4)
 
 rm(data1, data2, data3, data4)
 
-N <- 150
+N <- 100
 N.SHIFTS <- 5
 STEP <- 1
 
 # (for testing )
-#msea(data1[["base"]], data1[["test"]], N=5, n.shifts=1, ignore.zeros = F, step=1, return.sobject=FALSE,return.grids=FALSE, 
-#     run.parallel = FALSE, sppt_diff, adj = "none")
+#x <- msea(data1[["base"]], data1[["test"]], N=5, n.shifts=1, step=1, mask=bc.urban,
+#          ignore.zeros = F, return.sobject=FALSE,return.grids=FALSE, 
+#          run.parallel = FALSE, sppt_diff, adj = "none")
 
 # Begin with the old sppt
 tmp <- lapply(X = all, FUN = function(x) { # No longer do these in parallel as the method itself has been parallelised
-  msea(x[['base']], x[['test']], N=N, n.shifts=N.SHIFTS, ignore.zeros = F, step=STEP, 
+  msea(x[['base']], x[['test']], N=N, n.shifts=N.SHIFTS, mask=bc.urban,
+       ignore.zeros = F, step=STEP, 
        return.sobject=FALSE, # Don't return the s.objects, nor the spatial grids
        return.grids=FALSE,   # to save memory
        sppt_func = sppt # the kind of sppt function to run
@@ -604,7 +672,8 @@ gc() # Do some garbage collection after deleting the big temporary objects (mayb
 
 # Now the bootstrap version
 tmp <- lapply(X = all, FUN = function(x) {
-  msea(x[['base']], x[['test']], N=N, n.shifts=N.SHIFTS, ignore.zeros = F, step=STEP, 
+  msea(x[['base']], x[['test']], N=N, n.shifts=N.SHIFTS, mask=bc.urban,
+       ignore.zeros = F, step=STEP, 
        return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt_boot 
   ) })
 stopifnot(length(tmp)==4)
@@ -617,7 +686,8 @@ gc() # Do some garbage collection after deleting the big temporary objects (mayb
 
 # Finish with the difference in proportions
 tmp <- lapply(X = all, FUN = function(x) { 
-  msea(x[['base']], x[['test']], N=N, n.shifts=N.SHIFTS, ignore.zeros = F, step=STEP, 
+  msea(x[['base']], x[['test']], N=N, n.shifts=N.SHIFTS, mask=bc.urban,
+       ignore.zeros = F, step=STEP, 
        return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt_diff, adj = "none" # (note additional argument to sppt_diff)
   ) })
 stopifnot(length(tmp)==4)
@@ -631,30 +701,49 @@ gc() # Do some garbage collection after deleting the big temporary objects (mayb
 # save.image('temp.RData') # In case it crashes later
 ```
 
-Also run again once for BNER and TOB to do the fuzzy mapping. These results wont be used in the graph, so don't need to calculate the index as many times 
+Also run again once for BNER and TOB to do the fuzzy mapping. These results wont be used in the graph, so don't need to calculate the index as many times. Also write out the results as a csv file. Note that some specific grids are written out by the chunk `map.iterations` once it has been decided which grids are the most interesting.
 
-(The code above doesn't actually return the spatial results grids because it takes a huge amount of memory (_will work, but needs a PC with > 20Gb memory or so or it becomes unusable_))
-
-```{r runMSEA-bner, cache=TRUE}
-N <- 150
+```{r runMSEA-bner, cache=TRUE, warnings=FALSE}
+N <- 50
 N.SHIFTS <- 1
 STEP <- 1
 p1 <- BNER[BNER$YEAR==2015,]
 p2 <- BNER[BNER$YEAR==2016,]
-bner.result <- msea(points1 = p1, points2 = p2,
-                    N=N, n.shifts=N.SHIFTS, ignore.zeros = F, step=STEP,
-                    return.sobject=TRUE,
-                    return.grids=TRUE,
-                    sppt_func = sppt_boot # the kind of sppt function to run
+bner.result.diff <- msea(points1 = p1, points2 = p2,
+                    N=N, n.shifts=N.SHIFTS, mask=bc.urban, ignore.zeros = F, step=STEP,
+                    return.sobject=TRUE, return.grids=TRUE,
+                    sppt_func = sppt_diff # the kind of sppt function to run
 )
 p1 <- TOB[TOB$YEAR==2015,]
 p2 <- TOB[TOB$YEAR==2016,]
-tob.result <- msea(points1 = p1, points2 = p2,
-                    N=N, n.shifts=N.SHIFTS, ignore.zeros = F, step=STEP,
-                    return.sobject=TRUE,
-                    return.grids=TRUE,
-                    sppt_func = sppt_boot # the kind of sppt function to run
+tob.result.diff <- msea(points1 = p1, points2 = p2,
+                    N=N, n.shifts=N.SHIFTS, mask=bc.urban, ignore.zeros = F, step=STEP,
+                    return.sobject=TRUE, return.grids=TRUE,
+                    sppt_func = sppt_diff # the kind of sppt function to run
 )
+
+# Delete old files
+files <- list.files(path = "./ROUT", pattern = "bner_result")
+for (f in files) { file.remove(paste0("./ROUT/",f)) }
+files <- list.files(path = "./ROUT", pattern = "tob_result")
+for (f in files) { file.remove(paste0("./ROUT/",f)) }
+
+# Write a csv file with the data in it. THe messy bit is to get all list names except for the results grids
+# and s.objects (don't want to try to write those to csv!)
+write.csv( data.frame(sapply(
+  X=names(tob.result.diff)[names(tob.result.diff)!="results" & names(tob.result.diff)!="s.object"], 
+  FUN = function(x) { tob.result.diff[[x]] } )),
+  file="./ROUT/tob_result_diff.csv"
+)
+
+write.csv( data.frame(sapply(
+  X=names(bner.result.diff)[names(bner.result.diff)!="results" & names(bner.result.diff)!="s.object"], 
+  FUN = function(x) { bner.result.diff[[x]] } )),
+  file="./ROUT/bner_result_diff.csv"
+)
+
+
+
 #save.image('temp.RData')
 ```
 
@@ -663,32 +752,32 @@ tob.result <- msea(points1 = p1, points2 = p2,
 
 And run yet again to test on a very large number of iterations
 
-```{r runMSEA-test, cache=TRUE, eval=FALSE}
+```{r runMSEA-test, cache=TRUE}
 p1 <- BNER[BNER$YEAR==2015,]
 p2 <- BNER[BNER$YEAR==2016,]
-test.result.normal <- msea(points1 = p1, points2 = p2, N=500, n.shifts=1, ignore.zeros = F, 
+test.result.normal <- msea(points1 = p1, points2 = p2, N=500, n.shifts=1, ignore.zeros = F, mask=bc.urban,
                            step=10, return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt)
-test.result.boot   <- msea(points1 = p1, points2 = p2, N=500, n.shifts=1, ignore.zeros = F, 
+test.result.boot   <- msea(points1 = p1, points2 = p2, N=500, n.shifts=1, ignore.zeros = F, mask=bc.urban,
                            step=10, return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt_boot)
-test.result.diff   <- msea(points1 = p1, points2 = p2, N=500, n.shifts=1, ignore.zeros = F, 
+test.result.diff   <- msea(points1 = p1, points2 = p2, N=500, n.shifts=1, ignore.zeros = F, mask=bc.urban,
                            step=10, return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt_diff)
+
+save( test.result.normal, test.result.boot, test.result.diff, file="./large_iteration_test.RData")
 ```
 
 Plot the results of the large iteration test:
 
-```{r runMSEA-test-plot, fig.width=5, fig.height=11, eval=FALSE}
+```{r runMSEA-test-plot, fig.width=11, fig.height=15}
 
 error.stats <- c("rss", "r.squared", "rmse", "globalS", "globalS.robust") # The error stats. to use
 par(mfrow=c(6,length(error.stats))) # One plot for each error statistic using both num.cells and square area
-
-#r <- test.result$results # This is the results of the msea test
 
 for (type in c("num.cells", "cell.areas")) {
   for (e in error.stats) {
      x <- test.result.normal[[type]]
      y <- test.result.normal[[e]]
      ylim <- if (e=="globalS" | e=="globalS.robust") c(0,1) else NULL
-     plot(x,y, main=paste0(name,", ",e,", NORM" ), xlab=type, ylab=paste("Error (",e,")"), ylim=ylim)
+     plot(x,y, main=paste0("BNER, ",e,", NORM" ), xlab=type, ylab=paste("Error (",e,")"), ylim=ylim)
   }
 }
 for (type in c("num.cells", "cell.areas")) {
@@ -696,7 +785,7 @@ for (type in c("num.cells", "cell.areas")) {
      x <- test.result.boot[[type]]
      y <- test.result.boot[[e]]
      ylim <- if (e=="globalS" | e=="globalS.robust") c(0,1) else NULL
-     plot(x,y, main=paste0(name,", ",e,", BOOT"), xlab=type, ylab=paste("Error (",e,")"), ylim=ylim)
+     plot(x,y, main=paste0("BNER, ",e,", BOOT"), xlab=type, ylab=paste("Error (",e,")"), ylim=ylim)
   }
 }
 for (type in c("num.cells", "cell.areas")) {
@@ -704,22 +793,20 @@ for (type in c("num.cells", "cell.areas")) {
      x <- test.result.diff[[type]]
      y <- test.result.diff[[e]]
      ylim <- if (e=="globalS" | e=="globalS.robust") c(0,1) else NULL
-     plot(x,y, main=paste0(name,", ",e,", DIFF"), xlab=type, ylab=paste("Error (",e,")"), ylim=ylim)
+     plot(x,y, main=paste0("BNER, ",e,", DIFF"), xlab=type, ylab=paste("Error (",e,")"), ylim=ylim)
   }
 }
 
-
-
+# Get rid of these so that they're not in the main RData file. Too big
+rm(test.result.normal, test.result.boot, test.result.diff)
 ```
-
-
 
 
 
 
 ## Spatial Error Resolution
 
-### All Error Measures
+### All Error Measures (using normal sppt)
 
 Graph the differences, using the number of cells used, for each crime type.
 
@@ -747,66 +834,135 @@ for (a in all) {
 
 ### Comparing different Local S Index results
 
-Above we computed the S Index using the 'normal' method, as well as the new 'bootstrap' (`sppt_boot`) and 'proportional difference' (`sppt_diff`). Compare the results for each crime type now.
+Above we computed the S Index using the 'normal' method, as well as the new 'bootstrap' (`sppt_boot`) and 'proportional difference' (`sppt_diff`). Compare the results for each crime type now using the non-robust index.
+
+Also mark on the graphs the points at which I will draw the maps below
 
 ```{r s.index-comparisons1, fig.width=12, fig.height=7 }
+
+ITERATIONS.TO.MAP <- c(20, 50, 80, 150, 200, 300)
 
 # Make some lists so that the same plotting code can loop
 crime.types = vapply(X=all, FUN=function(x)x$name, FUN.VALUE = character(1)) # The crime types (4)
 test.results = list(all, all.boot, all.diff)
-cols  = c("#fc8d59","#333333","#99d594") # Colours used later
-names = c("Normal", "Bootstrap", "Proportional Difference")
+colours  <- brewer.pal(3, "Accent") # Colours for the points
+line.colours <- brewer.pal(length(ITERATIONS.TO.MAP), "Dark2") # Colours for the horizontal lines
+names <- c("Normal", "Bootstrap", "Proportional Difference")
 
 s.type = "globalS.robust" # Whether to use robust or non-robust
 #s.type = "globalS"
 
 par(mfrow=c(2,length(crime.types))) # 2 rows, one for num.cells and square.area, 4 columns (one for each crime type)
 
-# Loop for num.cells graphs first (could do the x axis type in another loop, but the graphs are quite difference
-# so this is more hassle than it's worth)
-for (i in 1:length(crime.types)) { # For each crime type
-  crime.type <- crime.types[i]
-  for (j in 1:length(test.results)) { # For each test result
-    error.type <- names[j]
-    colour <- cols[j]
-    r <- test.results[[j]][[i]]$r # This is the results of the test for the crime type
-    x <- r$num.cells
-    y <- r[[s.type]] # The S Index (either normal, boot, or prop)
-    if (j==1) {
-      plot(x,y, main=paste0(crime.type), xlab="Number of Cells", ylab="Similarity", 
-          col=colour, pch=1, ylim=c(0,1))#, xlim=c(0,10000))
-      #legend("bottomright", legend = names, col = cols, pch=1)
-    } else {
-      points(x,y, col=colour, pch=1)
+do.s.plot <- function(x.axis.type, s.type = "globalS", xlim=NULL, iter.to.map = ITERATIONS.TO.MAP, text.size=1.2) {
+  # Loop for num.cells graphs first (could do the x axis type in another loop, but the graphs are quite difference
+  # so this is more hassle than it's worth)
+  for (i in 1:length(crime.types)) { # For each crime type
+    crime.type <- crime.types[i]
+    for (j in 1:length(test.results)) { # For each test result
+      error.type <- names[j]
+      colour <- colours[j]
+      r <- test.results[[j]][[i]]$r # This is the results of the test for the crime type
+      x <- r[[x.axis.type]] #num.cells or cell.areas
+      y <- r[[s.type]] # The S Index (either normal, boot, or prop)
+      if (j==1) {
+        plot(x,y, main=paste0(crime.type), xlab=x.axis.type, ylab="Similarity", 
+            pch=j, ylim=c(0,1), xlim=xlim, col=colour )
+        legend("bottomright", legend = names,  pch=1:length(crime.types), col = colours, cex=text.size)
+      } else {
+        points(x,y, pch=j,  col=colour)
+      }
+      # Add the straight lines showing where we'll map
+      col.count <- 1
+      for (iter in iter.to.map) {
+        xval = r[[x.axis.type]][iter]
+        abline(v = xval, col=line.colours[col.count], lty="dashed")
+        text  (x = xval, y=0.2, labels=paste0(iter,"\n",signif(xval, 4)), cex=text.size)
+        col.count <- col.count + 1
+      }
     }
   }
 }
 
-# Repeat for square area
-for (i in 1:length(crime.types)) { # For each crime type
-  crime.type <- crime.types[i]
-  for (j in 1:length(test.results)) { # For each test result
-    error.type <- names[j]
-    colour <- cols[j]
-    r <- test.results[[j]][[i]]$r # This is the results of the test for the crime type
-    x <- r$cell.areas
-    y <- r[[s.type]] # The S Index (either normal, boot, or prop)
-    if (j==1) {
-      plot(x,y, main=paste0(crime.type), xlab="Square area of cells", ylab="Similarity", 
-           col=colour, pch=1, ylim=c(0,1), xlim=c(0,2000000) )#xlim=c(0,80000))
-      legend("bottomleft", legend = names, col = cols, pch=1)
-    } else {
-      points(x,y, col=colour, pch=1)
-    }
-  }
-}
-
-# Tidy up
-rm(crime.types,test.results,cols, names, s.type)
+do.s.plot("num.cells")
+do.s.plot("cell.areas")
 
 ```
 
+Repeat with much more narrow x axes. 
 
+```{r s.index-comparisons2, fig.width=12, fig.height=7 }
+par(mfrow=c(2,length(crime.types))) # 2 rows, one for num.cells and square.area, 4 columns (one for each crime type)
+do.s.plot("num.cells", xlim=c(0,2000), text.size=1.5)
+do.s.plot("cell.areas", xlim=c(0,2000000))
+```
+
+Even narrower.
+
+```{r s.index-comparisons3, fig.width=12, fig.height=7 }
+par(mfrow=c(2,length(crime.types))) # 2 rows, one for num.cells and square.area, 4 columns (one for each crime type)
+do.s.plot("num.cells", xlim=c(0,400), text.size = 2.0)
+do.s.plot("cell.areas", xlim=c(0,100000), text.size = 2.0)
+```
+
+### Mapping the 'interesting' resolutions
+
+Looking at the maps above, it would be useful to see what each resolution looks like in practice. How large are these cells?
+
+Using the BNER and TOB examples created earlier, map these resolutions.
+
+```{r map.iterations, fig.width=12, fig.height=7 }
+# Code is slightly complicated because the BNER and TOB results aren't as comprehensive. This is because
+# I don't generate full grid results for every resolution because it takes up too much memory. The code
+# below finds the most suitable results from those that are available (i.e. the nearest to the ones listed
+# in ITERATIONS.TO.MAP).
+
+# Find the closest indices for the iterations that we want to map. Need the equivalent number of cells for each iteration
+# NOTE: all[[1]] gives results for first crime type. This is OK as all four types have same numbers of cells per iteration:
+# sapply(X=seq(1:length(crime.types)), FUN=function(i) all[[i]]$r$num.cells)
+num.cells.list <- all[[1]]$r$num.cells 
+num.cells.to.map <- num.cells.list[ITERATIONS.TO.MAP] # Want to map iterations that has this many cells.
+# Find the closest indices (i.e. those that have the number of cells that are the most simlar to the iterations in ITER.TO.MAP)
+indices.to.map <- sapply(X=ITERATIONS.TO.MAP, FUN=function(x) {min(which(bner.result.diff$num.cells - x > 0))})
+
+par(mfrow=c(2,3)) # Assuming six iterations to map
+options(scipen=10)
+count <- 1
+for (index in indices.to.map) {
+  num.cells <- bner.result.diff[["num.cells"]][index]
+  sq.area <- bner.result.diff[["cell.areas"]][index] / 1000000
+  grid <- bner.result.diff[["results"]][[index]]
+  plot(vancouver.boundaries, main=paste0("BNER"), lwd=0.5, col="gray", lty='dashed')
+  plot(grid, border=line.colours[count], lwd=2, add=T )
+  text(x=grid@bbox["x", "min"], y=grid@bbox["y", "max"], cex=2,
+       labels = paste0("Num Cells: ",num.cells, "\nSquare Area: " ,round(sq.area, digits = 2)) )
+  #print(bner.result.diff[["results"]][[index]])
+  
+
+  # Also write out the grids as shapefiles (old ones have already been deleted by chunk runMSEA-bner)  
+  writeOGR(obj = tob.result.diff$results[[index]], dsn = "./ROUT", layer = paste0("tob_result_diff_",count), 
+           driver = "ESRI Shapefile", overwrite_layer = TRUE)
+  writeOGR(obj = bner.result.diff$results[[index]], dsn = "./ROUT", layer = paste0("bner_result_diff_",count), 
+           driver = "ESRI Shapefile", overwrite_layer = TRUE)
+  
+  count <- count + 1
+}
+
+# The leaflet way:
+# WEIGHT <- 2
+# leaflet() %>%
+# addPolygons( data = spTransform(x = bner.result.diff[["results"]][[1]], CRS("+init=epsg:4326") ), 
+#              col=cols[1], fill=FALSE, weight=WEIGHT) %>%
+# addPolygons( data = spTransform(x = bner.result.diff[["results"]][[2]], CRS("+init=epsg:4326") ), 
+#              col=cols[2], fill=FALSE, weight=WEIGHT) %>%
+# addPolygons( data = spTransform(x = bner.result.diff[["results"]][[3]], CRS("+init=epsg:4326") ), 
+#              col=cols[3], fill=FALSE, weight=WEIGHT) %>%
+# addPolygons( data = spTransform(x = bner.result.diff[["results"]][[4]], CRS("+init=epsg:4326") ), 
+#              col=cols[4], fill=FALSE, weight=WEIGHT) %>%
+# addTiles() #%>%  # Add default OpenStreetMap map tiles
+#   #addCircles()
+
+```
 
 
 ### S Index Models
