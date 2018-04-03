@@ -1,0 +1,251 @@
+---
+title: "Experimenting with the S Index"
+author: "Nick Malleson"
+date: '`r format(Sys.time(), "%d %B, %Y (%H:%M)")`'
+output:
+  html_document: 
+    toc: yes
+    pandoc_args: [
+      "+RTS", "-K64m",
+      "-RTS"
+    ]
+  pdf_document:
+    fig_crop: no
+    highlight: kate
+    keep_tex: yes
+    latex_engine: xelatex
+    number_sections: yes
+fontsize: 10pt
+---
+
+# Introduction
+
+This script has code that can be used to experiment with the S Index under different conditions. 
+
+## Configuration and library loading
+
+Configure the script here. (Un)comment or edit lines as appropriate to change the data used and the parameters for the method. (_R code not included in output_).
+
+**Important**: the main thing to change here is the working directory (`WORKING_DIR`). Set this to the location of this Rmd file.
+
+```{r initialise, echo=FALSE, message=FALSE, warning=FALSE, include=FALSE}
+WORKING_DIR <- '~/mapping/projects/sppt/'
+setwd(WORKING_DIR)
+
+library(GISTools)
+library(rgdal)     # For reading shapefiles
+library(xtable)   # For making latex/html tables
+library(parallel) # For ruonning things in parallel (e.g. mclapply())
+no_cores <- detectCores() / 2 # Detect the number of cores that are available and use half (often CPUs simulate 2 threads per core)
+Sys.setenv(MC_CORES=no_cores) # Run on n cores (I'm not sure which of these
+options("mc.cores"=no_cores)  # is correct).
+
+library(sppt) # The spatial point pattern test library (see https://github.com/wsteenbeek/sppt for install instructions)
+```
+ 
+# Data
+
+We use publicly-available Vancouver crime data, available [here](http://data.vancouver.ca/datacatalogue/crime-data.htm).
+
+Data are available from: [http://data.vancouver.ca/datacatalogue/crime-data-details.htm](http://data.vancouver.ca/datacatalogue/crime-data-details.htm) and there is a single zip file: [ftp://webftp.vancouver.ca/opendata/shape/crime_shp_all_years.zip](ftp://webftp.vancouver.ca/opendata/shape/crime_shp_all_years.zip).
+
+The script begins by downloading the data (if necessary).
+
+```{r downloadData }
+ZIPFILENAME <- "./data-raw/vancouver_public/crime_shp_all_years.zip"
+
+if (!file.exists(ZIPFILENAME)) {
+  print("Downloading crime data")
+  download.file(url = "ftp://webftp.vancouver.ca/opendata/shape/crime_shp_all_years.zip", destfile = ZIPFILENAME)
+}
+
+```
+
+Then read it in:
+
+```{r readData}
+
+# Unzip the files into the working directory
+zipfile <- unzip(ZIPFILENAME)
+
+# Read the shapefile
+all.crime <- readOGR(dsn="./crime_shp_all_years", layer = "crime_shp_all_years")
+
+# Delete the extracted file
+unlink(zipfile)
+unlink("crime_shp_all_years", recursive = TRUE) # a left over directory
+
+# Assign short codes to crime types (the below throws an error about 'values must be length 1'
+# if there are any crime types that aren't matched to short equivalents)
+all.crime$TYPE2 <- as.factor(unlist(
+  mclapply(X = all.crime$TYPE, FUN = function(t) {
+    t2 <- switch(as.character(t),
+          "Break and Enter Commercial" = "BNEC", 
+          "Break and Enter Residential/Other" = "BNER",
+          "Mischief" = "MISCHIEF",
+          "Other Theft" = "OTHERTHEFT",
+          "Theft from Vehicle" = "TFV",
+          "Theft of Bicycle" = "TOB",
+          "Theft of Vehicle" = "TOV",
+          "Vehicle Collision or Pedestrian Struck (with Fatality)" = "COLFAT", 
+          "Vehicle Collision or Pedestrian Struck (with Injury)" = "COLINJ")
+})))
+  
+# Drop 2018 (not sufficient data yet)
+all.crime <- all.crime[which(all.crime$YEAR<2018),]
+
+rm(ZIPFILENAME)
+```
+
+How many different crimes are there, by year:
+
+```{r allCrimeByYear-table, results="asis" }
+print(xtable(table(all.crime$TYPE, all.crime$YEAR)), type="html")
+```
+
+Do a graph as well, indexed to volume at the start
+
+```{r allCrimeByYear-graph, fig.width=9, fig.height=6 }
+
+crime.table <- table(all.crime$TYPE, all.crime$YEAR)
+crime.types <- rownames(crime.table)
+crime.years <- sapply(X = colnames(crime.table), FUN = strtoi)
+
+for ( i in 1:length(crime.types)) {
+  type <- crime.types[i]
+  
+  # Need to index
+  start <- crime.table[type,1]
+  yval <- 100 * ( crime.table[type,] / start)
+  if (i==1) {
+    plot(x=crime.years, y=yval, type='o', lty=1, pch=i, col=i, ylim=c(0,250),
+         main="Change in crime volumes over time", ylab="Number of crimes (indexed)", xlab="Year"
+         )
+  }
+  lines(x=crime.years, y=yval, type='o', lty=1, pch=i, col=i)
+  legend("topleft", legend = crime.types, col=1:length(crime.types), lty=1, pch=1:length(crime.types), cex=0.7)
+}
+rm(start, yval, type)
+```
+
+For context, see how many there are in total (using short names of crimes)
+
+```{r allCrime-totals_graph, fig.width=7, fig.height=4 }
+barplot(rowSums(table(all.crime$TYPE2, all.crime$YEAR)
+), horiz=TRUE, cex.names=0.8, las=1)
+```
+
+Finally split the big file up into different crimes and create a new variable for each crime type.
+
+```{r subsetRawData }
+# A directory for the crime data (in case it doesn't exist)
+dir.create(file.path("./ROUT", "crime"), showWarnings = FALSE)
+
+# Shorter versions of the crime types
+crime.types2 <- unique(all.crime$TYPE2)
+
+for (type in crime.types2) {
+  assign(as.character(type), all.crime[all.crime$TYPE2==type,])
+  # Write them as well as they can be useful later
+  writeOGR(all.crime[all.crime$TYPE2==type,], dsn = "./ROUT/crime", layer = type, 
+           driver = "ESRI Shapefile", overwrite_layer = TRUE)
+}
+
+```
+
+The following variables are now available for each crime type: `r print(crime.types2)`.
+
+# Experiment: Sampling sizes and S Index
+
+See what happens to the Global S Index as the relative size of the base and test datasets change. Method as follows:
+
+ 1. Load one dataset (BNER will do)
+ 2. Sample from the data
+ 3. Run the S test, comparing the sample to the original
+ 4. Reduce the sample size and repeat (2)
+ 5. Graph S against the sample size (or proportion)
+ 
+```{r testS.Samples}
+par(mfrow=c(1,1))
+van.poly <- readOGR("./data-raw/vancouver_all/areas.shp")
+
+#Define the data to use. All BNER data at the moment.
+d <- BNER
+
+# Prepare a vector of the proportions of data to sample (e.g. 0.99, 0.98, ... 0.01)
+proportion <- seq(from=0.99, to=0.01, by=-0.05)
+# Do a few tests per proportion
+prop <- c()
+for (i in 1:10) prop <- c(prop, proportion)
+proportion <- prop
+rm(prop)
+proportion <- sort(proportion) # Sort the proportions (e.g. 0.99, 0.99, 0.99, 0.99, 0.98, .... 0.01, 0.01.)
+
+# Now run one test for each proportion.
+# We do this in parallel, using 'mclapply' (the parallel version of 'lapply')
+# This works by defining a function that samples the data, runs the test, and returns the output of sppt().
+# These results are all stored in a list called 's.objects' (i.e. the objects returned by sppt())
+# The equivalient 'for' loop would be like:
+# s.objects <- c()
+# for (p in proportion) {
+#   base <- d
+#   test <- d[sample(1:nrow(d), size=nrow(d)*p),] # Take a sample from d
+#   s <- sppt(base_points.sp = base, test_points.sp = test, uoa.sp = van.poly)
+#   s.objects <- c(s.objects, s)
+# }
+
+s.objects <- mclapply(X=proportion, FUN=function(p) {
+  
+  samp <- sample(1:nrow(d), size=nrow(d)*p) #A sample of random rows
+  base <- d
+  test <- d[samp,]
+  
+  s <- sppt(base_points.sp = base, test_points.sp = test, uoa.sp = van.poly)
+  return(s)
+})
+
+# Now we have a list with all of the results from the sppt() function. Get a list of all of the
+# global values from each test.
+globalS <-        vapply(X=s.objects, FUN.VALUE = numeric(1), FUN=function(a) {a$globalS[[1]]})
+globalS.robust <- vapply(X=s.objects, FUN.VALUE = numeric(1), FUN=function(a) {a$globalS.robust[[1]]})
+
+```
+
+Plot the results:
+
+```{r plot.results, fig.height=6, fig.width=9}
+
+# Calculate lines of best fit for S Index against proportion (using quadratic equations)
+fit <-        lm ( y ~ x + I(x^2), data=data.frame("x"=proportion, "y"=globalS) ) 
+#fit.robust <- lm ( y ~ x + I(x^2), data=data.frame("x"=proportion, "y"=globalS.robust) )
+
+preds <-        predict(fit,        data=data.frame("x"=proportion, "y"=globalS),        interval = 'confidence')
+#preds.robust <- predict(fit.robust, data=data.frame("x"=proportion, "y"=globalS.robust), interval = 'confidence')
+
+# Plot the results (the points in this first one get copied over so needs to be redone)
+plot(  x=proportion, y=unlist(globalS), main="Testing the S Index with varying sample size of test data", 
+       xlab="Proportion (sample size)", ylab="Global S")
+
+polygon(c(rev(proportion), proportion), c(rev(preds[ ,3]), preds[ ,2]), col = "grey", border = NA)
+#polygon(c(rev(proportion), proportion), c(rev(preds.robust[ ,3]), preds.robust[ ,2]), col = 2, border = NA)
+
+points(x=proportion, y=unlist(globalS), col=1)
+#points(x=proportion, y=unlist(globalS.robust), col=2)
+
+# Models
+lines(x=proportion, y=predict(fit), col="red", lty=2)
+#lines(x=proportion, y=predict(fit.robust), col=2, lty=1)
+
+# Confidence intervals
+lines(proportion, preds[ ,3],        lty = 'dashed', col = 1)
+lines(proportion, preds[ ,2],        lty = 'dashed', col = 1)
+#lines(proportion, preds.robust[ ,3], lty = 'dashed', col = 2)
+#lines(proportion, preds.robust[ ,2], lty = 'dashed', col = 2)
+
+legend("topleft", legend=c("Noral", "Robust"), col=c(1,2), pch=1)
+
+
+```
+
+
+

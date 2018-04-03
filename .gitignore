@@ -2,3 +2,18 @@
 .Rhistory
 .RData
 .Ruserdata
+
+# Some data
+data-raw/vancouver_public/
+
+# Temporary files made by Nick's Rmd script
+ROUT/*
+spatial_resolution_cache/
+spatial_resolution_files/
+figure/
+cache/
+figs_for_paper/
+spatial_resolution.RData
+nohup.out
+large_iteration_test.Rout
+large_iteration_test.RData
