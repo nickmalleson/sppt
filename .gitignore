@@ -5,6 +5,7 @@
 
 # Some data
 data-raw/vancouver_public/
+data-raw/BTM_PRESENT_LAND_USE_V1_SVW.zip
 
 # Temporary files made by Nick's Rmd script
 ROUT/*

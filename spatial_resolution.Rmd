@@ -100,8 +100,8 @@ library(classInt) # Jenks natural breaks
 library(hydroGOF)   # Has an rmse() function
 library(xtable)   # For making latex/html tables
 library(parallel) # For ruonning things in parallel (e.g. mclapply())
-#no_cores <- detectCores() / 3  # Detect the number of cores that are available and use half (often CPUs simulate 2 threads per core)
-no_cores <- 4 # TEMP TO STOP MEMORY HOGGING
+no_cores <- detectCores() / 2  # Detect the number of cores that are available and use half (often CPUs simulate 2 threads per core)
+#no_cores <- 4 # TEMP TO STOP MEMORY HOGGING
 Sys.setenv(MC_CORES=no_cores) # Run on n cores (I'm not sure which of these
 options("mc.cores"=no_cores) # is correct).
 library(Deriv)   # For calculating deriviatives
@@ -701,6 +701,26 @@ gc() # Do some garbage collection after deleting the big temporary objects (mayb
 # save.image('temp.RData') # In case it crashes later
 ```
 
+Run again for BNER, but this time using *all* available point data. This will be used to see whether we are hitting small number problems with the smaller cells, rather than the legitimate impact of the resolution.
+
+Just use the `sppt_diff` for now. We can compare others later if this is important.
+
+```{r runMSEA-bner-large_sample, cache=TRUE }
+# Sample 50% of the points
+s <- sample(seq_along(BNER), size=round(nrow(BNER)/2), replace=FALSE)
+p1 <- BNER[s,]
+p2 <- BNER[-s,]
+stopifnot(nrow(p1) + nrow(p2) == nrow(BNER))
+
+bner.result.largesample <- 
+  msea(p1, p2, N=N, n.shifts=N.SHIFTS, mask=bc.urban, ignore.zeros = F, step=STEP, 
+       return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt_diff, adj = "none" # (note additional argument to sppt_diff)
+       )
+
+rm(s) # tidy up
+```
+
+
 Also run again once for BNER and TOB to do the fuzzy mapping. These results wont be used in the graph, so don't need to calculate the index as many times. Also write out the results as a csv file. Note that some specific grids are written out by the chunk `map.iterations` once it has been decided which grids are the most interesting.
 
 ```{r runMSEA-bner, cache=TRUE, warnings=FALSE}
@@ -712,15 +732,17 @@ p2 <- BNER[BNER$YEAR==2016,]
 bner.result.diff <- msea(points1 = p1, points2 = p2,
                     N=N, n.shifts=N.SHIFTS, mask=bc.urban, ignore.zeros = F, step=STEP,
                     return.sobject=TRUE, return.grids=TRUE,
-                    sppt_func = sppt_diff # the kind of sppt function to run
+                    sppt_func = sppt_diff, adj = "none" # (note additional argument to sppt_diff)
 )
 p1 <- TOB[TOB$YEAR==2015,]
 p2 <- TOB[TOB$YEAR==2016,]
 tob.result.diff <- msea(points1 = p1, points2 = p2,
                     N=N, n.shifts=N.SHIFTS, mask=bc.urban, ignore.zeros = F, step=STEP,
                     return.sobject=TRUE, return.grids=TRUE,
-                    sppt_func = sppt_diff # the kind of sppt function to run
+                    sppt_func = sppt_diff, adj = "none" # (note additional argument to sppt_diff)
 )
+
+rm(p1, p2) # tidy up
 
 # Delete old files
 files <- list.files(path = "./ROUT", pattern = "bner_result")
@@ -760,9 +782,10 @@ test.result.normal <- msea(points1 = p1, points2 = p2, N=500, n.shifts=1, ignore
 test.result.boot   <- msea(points1 = p1, points2 = p2, N=500, n.shifts=1, ignore.zeros = F, mask=bc.urban,
                            step=10, return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt_boot)
 test.result.diff   <- msea(points1 = p1, points2 = p2, N=500, n.shifts=1, ignore.zeros = F, mask=bc.urban,
-                           step=10, return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt_diff)
+                           step=10, return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt_diff, adj = "none")
 
 save( test.result.normal, test.result.boot, test.result.diff, file="./large_iteration_test.RData")
+rm(p1, p2) # tidy up
 ```
 
 Plot the results of the large iteration test:
@@ -817,7 +840,7 @@ options(scipen=1) # A bit of scientific notation is OK
 error.stats <- c("rss", "r.squared", "rmse", "globalS", "globalS.robust") # The error stats. to use
 par(mfrow=c(length(all),length(error.stats))) # One plot for each error statistic
 
-for (a in all) {
+for (a in all.diff) {
   r <- a$r # This is the results of the msea test
   name <- a$name # This is the name of the crime type
   
@@ -831,30 +854,76 @@ for (a in all) {
 ```
 
 
+### Comparing Burglary with Large Sample Size
+
+We ran a test (using `sppt_diff`) with *all* the burglary data (half as base, the other half as test). See how that compares to the normal burglary test (using 2015 and 2016 data).
+
+
+```{r compare.sample.sizes, fig.width=9, fig.height=5 }
+#colours  <- brewer.pal(2, "Set3") # Colours for the points
+#s.type = "globalS.robust" # Whether to use robust or non-robust
+
+s.type = "globalS"
+plot(x=bner.result.largesample[["num.cells"]] , 
+     y=bner.result.largesample[[s.type]] , 
+     main="Large sample comparison", xlab="Number of Cells", ylab="S Index", ylim=c(0,1), xlim=c(0,2000), 
+     col=1, pch=1)
+
+points(x=all.diff[[1]]$r[["num.cells"]] , 
+       y=all.diff[[1]]$r[[s.type]] , 
+     col=2, pch=2)
+
+
+legend("bottomright", legend = c("Large sample", "Normal sample"), pch=c(1,2), col=c(1,2))
+
+
+
+```
 
 ### Comparing different Local S Index results
 
-Above we computed the S Index using the 'normal' method, as well as the new 'bootstrap' (`sppt_boot`) and 'proportional difference' (`sppt_diff`). Compare the results for each crime type now using the non-robust index.
+Above we computed the S Index using the 'normal' method, as well as the new 'bootstrap' (`sppt_boot`) and 'proportional difference' (`sppt_diff`). Compare the results for each crime type now using the non-robust index. Also mark on the graphs the points at which I will draw the maps below
 
-Also mark on the graphs the points at which I will draw the maps below
+First, sanity check that the results from these smaller BNER and TOB checks are comparable to the original ones. They should be, obviously, although the BNER and TOB ones are less comprehensive (they ran for many fewer iterations and shifts). The folowing graphs should look similar
+
+```{r sanity.check.bner.results }
+#Note that all.diff[[1]] is the BNER results and all.diff[[4]] is the TOB
+a <- data.frame("numcells"=all.diff[[1]]$r[["num.cells"]],  
+                "sindex.bner1" = all.diff[[1]]$r[["globalS"]], 
+                "sindex.tob1" = all.diff[[4]]$r[["globalS"]])
+b <- data.frame("numcells"=bner.result.diff[["num.cells"]], "sindex.bner2"= bner.result.diff[["globalS"]])
+c <- data.frame("numcells"=tob.result.diff[["num.cells"]],  "sindex.tob2" = tob.result.diff[["globalS"]])
+
+m <- base::merge(x=a, y=b, all.x=TRUE, by="numcells")
+m <- base::merge(x=m, y=c, all.x=TRUE, by="numcells")
+
+par(mfrow=c(1,2))
+plot(  x=m$numcells, y=m$sindex.bner1, xlim=c(0,4000), main="BNER Sanity check\nshould be the same")
+points(m$numcells, m$sindex.bner2, col="blue")
+plot(  m$numcells, m$sindex.tob1, xlim=c(0,4000), main="TOB Sanity check\nshould be the same")
+points(m$numcells, m$sindex.tob2, col="blue")
+rm(a,b,c,m)
+```
+
+
 
 ```{r s.index-comparisons1, fig.width=12, fig.height=7 }
 
-ITERATIONS.TO.MAP <- c(20, 50, 80, 150, 200, 300)
+ITERATIONS.TO.MAP <- c(15, 30, 50, 80, 120, 200)
 
 # Make some lists so that the same plotting code can loop
 crime.types = vapply(X=all, FUN=function(x)x$name, FUN.VALUE = character(1)) # The crime types (4)
 test.results = list(all, all.boot, all.diff)
-colours  <- brewer.pal(3, "Accent") # Colours for the points
+colours  <- brewer.pal(3, "Set3") # Colours for the points
 line.colours <- brewer.pal(length(ITERATIONS.TO.MAP), "Dark2") # Colours for the horizontal lines
 names <- c("Normal", "Bootstrap", "Proportional Difference")
 
-s.type = "globalS.robust" # Whether to use robust or non-robust
-#s.type = "globalS"
+#s.type = "globalS.robust" # Whether to use robust or non-robust
+s.type = "globalS"
 
 par(mfrow=c(2,length(crime.types))) # 2 rows, one for num.cells and square.area, 4 columns (one for each crime type)
 
-do.s.plot <- function(x.axis.type, s.type = "globalS", xlim=NULL, iter.to.map = ITERATIONS.TO.MAP, text.size=1.2) {
+do.s.plot <- function(x.axis.type, s.type = "globalS", xlim=NULL, iter.to.map = ITERATIONS.TO.MAP, text.size=1.5) {
   # Loop for num.cells graphs first (could do the x axis type in another loop, but the graphs are quite difference
   # so this is more hassle than it's worth)
   for (i in 1:length(crime.types)) { # For each crime type
@@ -876,8 +945,10 @@ do.s.plot <- function(x.axis.type, s.type = "globalS", xlim=NULL, iter.to.map = 
       col.count <- 1
       for (iter in iter.to.map) {
         xval = r[[x.axis.type]][iter]
-        abline(v = xval, col=line.colours[col.count], lty="dashed")
-        text  (x = xval, y=0.2, labels=paste0(iter,"\n",signif(xval, 4)), cex=text.size)
+        abline(v = xval, col=line.colours[col.count], lty="solid", lwd=2)
+        text  (x = xval, y=0.2, cex=text.size,
+               labels=paste0(signif(xval, 4)))
+              #labels=paste0(iter,"\n",signif(xval, 4)))
         col.count <- col.count + 1
       }
     }
@@ -889,7 +960,7 @@ do.s.plot("cell.areas")
 
 ```
 
-Repeat with much more narrow x axes. 
+Repeat with narrower x axes. 
 
 ```{r s.index-comparisons2, fig.width=12, fig.height=7 }
 par(mfrow=c(2,length(crime.types))) # 2 rows, one for num.cells and square.area, 4 columns (one for each crime type)
@@ -901,8 +972,8 @@ Even narrower.
 
 ```{r s.index-comparisons3, fig.width=12, fig.height=7 }
 par(mfrow=c(2,length(crime.types))) # 2 rows, one for num.cells and square.area, 4 columns (one for each crime type)
-do.s.plot("num.cells", xlim=c(0,400), text.size = 2.0)
-do.s.plot("cell.areas", xlim=c(0,100000), text.size = 2.0)
+do.s.plot("num.cells", xlim=c(0,500), text.size = 2.5)
+do.s.plot("cell.areas", xlim=c(0,250000), text.size = 2.5)
 ```
 
 ### Mapping the 'interesting' resolutions
@@ -912,10 +983,10 @@ Looking at the maps above, it would be useful to see what each resolution looks 
 Using the BNER and TOB examples created earlier, map these resolutions.
 
 ```{r map.iterations, fig.width=12, fig.height=7 }
-# Code is slightly complicated because the BNER and TOB results aren't as comprehensive. This is because
-# I don't generate full grid results for every resolution because it takes up too much memory. The code
-# below finds the most suitable results from those that are available (i.e. the nearest to the ones listed
-# in ITERATIONS.TO.MAP).
+# Code is slightly complicated because the BNER and TOB results aren't as comprehensive as the all, all.boot and all.diff
+# ones. This is because for the main results (all*) I don't return the for each iteration because it takes up too much
+# memory. So the code below finds the most suitable BNER and TOB results from those that are available (i.e. the nearest
+# to the ones listed in ITERATIONS.TO.MAP). It's basically translating from one index to another.
 
 # Find the closest indices for the iterations that we want to map. Need the equivalent number of cells for each iteration
 # NOTE: all[[1]] gives results for first crime type. This is OK as all four types have same numbers of cells per iteration:
@@ -923,7 +994,16 @@ Using the BNER and TOB examples created earlier, map these resolutions.
 num.cells.list <- all[[1]]$r$num.cells 
 num.cells.to.map <- num.cells.list[ITERATIONS.TO.MAP] # Want to map iterations that has this many cells.
 # Find the closest indices (i.e. those that have the number of cells that are the most simlar to the iterations in ITER.TO.MAP)
-indices.to.map <- sapply(X=ITERATIONS.TO.MAP, FUN=function(x) {min(which(bner.result.diff$num.cells - x > 0))})
+indices.to.map <- sapply(X=num.cells.to.map, FUN=function(x) {
+  i <- min(which(bner.result.diff$num.cells - x >= 0))
+  if (is.infinite(i) ){ 
+    # need to check for infinites. This happens when there isn't a large enough grid available.
+    # Just return the biggest available (i.e. the index of the last grid)
+    return (length(bner.result.diff$num.cells))
+  } else {
+    return (i)
+  }
+  })
 
 par(mfrow=c(2,3)) # Assuming six iterations to map
 options(scipen=10)
@@ -941,9 +1021,9 @@ for (index in indices.to.map) {
 
   # Also write out the grids as shapefiles (old ones have already been deleted by chunk runMSEA-bner)  
   writeOGR(obj = tob.result.diff$results[[index]], dsn = "./ROUT", layer = paste0("tob_result_diff_",count), 
-           driver = "ESRI Shapefile", overwrite_layer = TRUE)
+           driver = "ESRI Shapefile", overwrite_layer = TRUE, verbose = FALSE)
   writeOGR(obj = bner.result.diff$results[[index]], dsn = "./ROUT", layer = paste0("bner_result_diff_",count), 
-           driver = "ESRI Shapefile", overwrite_layer = TRUE)
+           driver = "ESRI Shapefile", overwrite_layer = TRUE, verbose = FALSE)
   
   count <- count + 1
 }
@@ -963,6 +1043,25 @@ for (index in indices.to.map) {
 #   #addCircles()
 
 ```
+
+Zoom in on downtown
+
+```{r map.iterations.zoom, fig.width=8, fig.height=4 }
+par(mfrow=c(2,3)) # Assuming six iterations to map
+options(scipen=10)
+count <- 1
+for (index in indices.to.map) {
+  num.cells <- bner.result.diff[["num.cells"]][index]
+  sq.area <- bner.result.diff[["cell.areas"]][index] / 1000000
+  grid <- bner.result.diff[["results"]][[index]]
+  plot(vancouver.boundaries, main=paste0("BNER"), lwd=0.5, col="gray", lty='dashed', axes=T,
+       xlim=c(490000,491000), ylim = c(5458000,5460000) )
+  plot(grid, border=line.colours[count], lwd=2, add=T )
+  #print(bner.result.diff[["results"]][[index]])
+  count <- count + 1
+}
+```
+
 
 
 ### S Index Models

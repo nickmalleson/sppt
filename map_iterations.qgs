@@ -3,16 +3,19 @@
   <title></title>
   <layer-tree-group expanded="1" checked="Qt::PartiallyChecked" name="">
     <customproperties/>
-    <layer-tree-layer expanded="1" checked="Qt::Checked" id="bner_result_diff_620180315122700935" name="bner_result_diff_6">
+    <layer-tree-layer expanded="1" checked="Qt::Unchecked" id="areas20180315121837296" name="areas">
+      <customproperties/>
+    </layer-tree-layer>
+    <layer-tree-layer expanded="1" checked="Qt::Unchecked" id="bner_result_diff_620180315122700935" name="bner_result_diff_6">
       <customproperties/>
     </layer-tree-layer>
     <layer-tree-layer expanded="1" checked="Qt::Unchecked" id="bner_result_diff_520180315122656276" name="bner_result_diff_5">
       <customproperties/>
     </layer-tree-layer>
-    <layer-tree-layer expanded="1" checked="Qt::Unchecked" id="bner_result_diff_420180315121826156" name="bner_result_diff_4">
+    <layer-tree-layer expanded="1" checked="Qt::Checked" id="bner_result_diff_420180315121826156" name="bner_result_diff_4">
       <customproperties/>
     </layer-tree-layer>
-    <layer-tree-layer expanded="1" checked="Qt::Unchecked" id="bner_result_diff_320180315121826129" name="bner_result_diff_3">
+    <layer-tree-layer expanded="1" checked="Qt::Checked" id="bner_result_diff_320180315121826129" name="bner_result_diff_3">
       <customproperties/>
     </layer-tree-layer>
     <layer-tree-layer expanded="1" checked="Qt::Unchecked" id="bner_result_diff_220180315121826105" name="bner_result_diff_2">
@@ -27,18 +30,15 @@
     <layer-tree-layer expanded="1" checked="Qt::Unchecked" id="OpenLayers_plugin_layer20180315122103574" name="OpenStreetMap">
       <customproperties/>
     </layer-tree-layer>
-    <layer-tree-layer expanded="1" checked="Qt::Checked" id="areas20180315121837296" name="areas">
-      <customproperties/>
-    </layer-tree-layer>
   </layer-tree-group>
   <relations/>
   <mapcanvas>
     <units>meters</units>
     <extent>
-      <xmin>-13706726.94225871749222279</xmin>
-      <ymin>6321371.46928044129163027</ymin>
-      <xmax>-13703377.05395074002444744</xmax>
-      <ymax>6323929.90065132919698954</ymax>
+      <xmin>-13705860.62718753702938557</xmin>
+      <ymin>6321808.04550361819565296</ymin>
+      <xmax>-13702922.10005235113203526</xmax>
+      <ymax>6324055.60114189982414246</ymax>
     </extent>
     <rotation>0</rotation>
     <projections>1</projections>
@@ -81,9 +81,14 @@
     </custom-order>
   </layer-tree-canvas>
   <legend updateDrawingOrder="true">
-    <legendlayer drawingOrder="-1" open="true" checked="Qt::Checked" name="bner_result_diff_6" showFeatureCount="0">
+    <legendlayer drawingOrder="-1" open="true" checked="Qt::Unchecked" name="areas" showFeatureCount="0">
       <filegroup open="true" hidden="false">
-        <legendlayerfile isInOverview="0" layerid="bner_result_diff_620180315122700935" visible="1"/>
+        <legendlayerfile isInOverview="0" layerid="areas20180315121837296" visible="0"/>
+      </filegroup>
+    </legendlayer>
+    <legendlayer drawingOrder="-1" open="true" checked="Qt::Unchecked" name="bner_result_diff_6" showFeatureCount="0">
+      <filegroup open="true" hidden="false">
+        <legendlayerfile isInOverview="0" layerid="bner_result_diff_620180315122700935" visible="0"/>
       </filegroup>
     </legendlayer>
     <legendlayer drawingOrder="-1" open="true" checked="Qt::Unchecked" name="bner_result_diff_5" showFeatureCount="0">
@@ -91,14 +96,14 @@
         <legendlayerfile isInOverview="0" layerid="bner_result_diff_520180315122656276" visible="0"/>
       </filegroup>
     </legendlayer>
-    <legendlayer drawingOrder="-1" open="true" checked="Qt::Unchecked" name="bner_result_diff_4" showFeatureCount="0">
+    <legendlayer drawingOrder="-1" open="true" checked="Qt::Checked" name="bner_result_diff_4" showFeatureCount="0">
       <filegroup open="true" hidden="false">
-        <legendlayerfile isInOverview="0" layerid="bner_result_diff_420180315121826156" visible="0"/>
+        <legendlayerfile isInOverview="0" layerid="bner_result_diff_420180315121826156" visible="1"/>
       </filegroup>
     </legendlayer>
-    <legendlayer drawingOrder="-1" open="true" checked="Qt::Unchecked" name="bner_result_diff_3" showFeatureCount="0">
+    <legendlayer drawingOrder="-1" open="true" checked="Qt::Checked" name="bner_result_diff_3" showFeatureCount="0">
       <filegroup open="true" hidden="false">
-        <legendlayerfile isInOverview="0" layerid="bner_result_diff_320180315121826129" visible="0"/>
+        <legendlayerfile isInOverview="0" layerid="bner_result_diff_320180315121826129" visible="1"/>
       </filegroup>
     </legendlayer>
     <legendlayer drawingOrder="-1" open="true" checked="Qt::Unchecked" name="bner_result_diff_2" showFeatureCount="0">
@@ -119,11 +124,6 @@
     <legendlayer drawingOrder="-1" open="true" checked="Qt::Unchecked" name="OpenStreetMap" showFeatureCount="0">
       <filegroup open="true" hidden="false">
         <legendlayerfile isInOverview="0" layerid="OpenLayers_plugin_layer20180315122103574" visible="0"/>
-      </filegroup>
-    </legendlayer>
-    <legendlayer drawingOrder="-1" open="true" checked="Qt::Checked" name="areas" showFeatureCount="0">
-      <filegroup open="true" hidden="false">
-        <legendlayerfile isInOverview="0" layerid="areas20180315121837296" visible="1"/>
       </filegroup>
     </legendlayer>
   </legend>
@@ -222,14 +222,14 @@
           <symbol alpha="1" clip_to_extent="1" type="fill" name="0">
             <layer pass="0" class="SimpleFill" locked="0">
               <prop k="border_width_map_unit_scale" v="0,0,0,0,0,0"/>
-              <prop k="color" v="132,139,73,255"/>
+              <prop k="color" v="0,0,0,0"/>
               <prop k="joinstyle" v="bevel"/>
               <prop k="offset" v="0,0"/>
               <prop k="offset_map_unit_scale" v="0,0,0,0,0,0"/>
               <prop k="offset_unit" v="MM"/>
-              <prop k="outline_color" v="0,0,0,255"/>
+              <prop k="outline_color" v="17,254,0,255"/>
               <prop k="outline_style" v="solid"/>
-              <prop k="outline_width" v="0.26"/>
+              <prop k="outline_width" v="1"/>
               <prop k="outline_width_unit" v="MM"/>
               <prop k="style" v="solid"/>
             </layer>
@@ -1157,9 +1157,9 @@
               <prop k="offset" v="0,0"/>
               <prop k="offset_map_unit_scale" v="0,0,0,0,0,0"/>
               <prop k="offset_unit" v="MM"/>
-              <prop k="outline_color" v="51,160,44,255"/>
+              <prop k="outline_color" v="1,26,255,255"/>
               <prop k="outline_style" v="solid"/>
-              <prop k="outline_width" v="0.26"/>
+              <prop k="outline_width" v="2"/>
               <prop k="outline_width_unit" v="MM"/>
               <prop k="style" v="solid"/>
             </layer>
@@ -1476,9 +1476,9 @@
               <prop k="offset" v="0,0"/>
               <prop k="offset_map_unit_scale" v="0,0,0,0,0,0"/>
               <prop k="offset_unit" v="MM"/>
-              <prop k="outline_color" v="1,26,255,255"/>
+              <prop k="outline_color" v="251,154,153,255"/>
               <prop k="outline_style" v="solid"/>
-              <prop k="outline_width" v="0.5"/>
+              <prop k="outline_width" v="2"/>
               <prop k="outline_width_unit" v="MM"/>
               <prop k="style" v="solid"/>
             </layer>
@@ -1983,13 +1983,14 @@
       <SingleCategoryDiagramRenderer diagramType="Pie">
         <DiagramCategory penColor="#000000" labelPlacementMethod="XHeight" penWidth="0" diagramOrientation="Up" minimumSize="0" barWidth="5" penAlpha="255" maxScaleDenominator="1e+08" backgroundColor="#ffffff" transparency="0" width="15" scaleDependency="Area" backgroundAlpha="255" angleOffset="1440" scaleBasedVisibility="0" enabled="0" height="15" sizeType="MM" minScaleDenominator="-4.65661e-10">
           <fontProperties description=".SF NS Text,13,-1,5,50,0,0,0,0,0" style=""/>
+          <attribute field="" color="#000000" label=""/>
         </DiagramCategory>
       </SingleCategoryDiagramRenderer>
       <DiagramLayerSettings yPosColumn="-1" linePlacementFlags="10" placement="0" dist="0" xPosColumn="-1" priority="0" obstacle="0" showAll="1"/>
-      <editform></editform>
+      <editform>.</editform>
       <editforminit/>
       <featformsuppress>0</featformsuppress>
-      <annotationform></annotationform>
+      <annotationform>.</annotationform>
       <editorlayout>generatedlayout</editorlayout>
       <excludeAttributesWMS/>
       <excludeAttributesWFS/>
@@ -2301,13 +2302,14 @@
       <SingleCategoryDiagramRenderer diagramType="Pie">
         <DiagramCategory penColor="#000000" labelPlacementMethod="XHeight" penWidth="0" diagramOrientation="Up" minimumSize="0" barWidth="5" penAlpha="255" maxScaleDenominator="1e+08" backgroundColor="#ffffff" transparency="0" width="15" scaleDependency="Area" backgroundAlpha="255" angleOffset="1440" scaleBasedVisibility="0" enabled="0" height="15" sizeType="MM" minScaleDenominator="-4.65661e-10">
           <fontProperties description=".SF NS Text,13,-1,5,50,0,0,0,0,0" style=""/>
+          <attribute field="" color="#000000" label=""/>
         </DiagramCategory>
       </SingleCategoryDiagramRenderer>
       <DiagramLayerSettings yPosColumn="-1" linePlacementFlags="10" placement="0" dist="0" xPosColumn="-1" priority="0" obstacle="0" showAll="1"/>
-      <editform></editform>
+      <editform>.</editform>
       <editforminit/>
       <featformsuppress>0</featformsuppress>
-      <annotationform></annotationform>
+      <annotationform>.</annotationform>
       <editorlayout>generatedlayout</editorlayout>
       <excludeAttributesWMS/>
       <excludeAttributesWFS/>
@@ -2378,13 +2380,17 @@
     <Digitizing>
       <DefaultSnapToleranceUnit type="int">2</DefaultSnapToleranceUnit>
       <LayerSnappingList type="QStringList">
+        <value>areas20180315121837296</value>
         <value>bner_result_diff_120180315121826036</value>
         <value>bner_result_diff_220180315121826105</value>
         <value>bner_result_diff_320180315121826129</value>
         <value>bner_result_diff_420180315121826156</value>
-        <value>areas20180315121837296</value>
+        <value>bner_result_diff_520180315122656276</value>
+        <value>bner_result_diff_620180315122700935</value>
       </LayerSnappingList>
       <LayerSnappingEnabledList type="QStringList">
+        <value>enabled</value>
+        <value>enabled</value>
         <value>enabled</value>
         <value>enabled</value>
         <value>enabled</value>
@@ -2399,8 +2405,12 @@
         <value>2</value>
         <value>2</value>
         <value>2</value>
+        <value>2</value>
+        <value>2</value>
       </LayerSnappingToleranceUnitList>
       <LayerSnapToList type="QStringList">
+        <value>to_vertex</value>
+        <value>to_vertex</value>
         <value>to_vertex</value>
         <value>to_vertex</value>
         <value>to_vertex</value>
@@ -2410,6 +2420,8 @@
       <DefaultSnapType type="QString">off</DefaultSnapType>
       <DefaultSnapTolerance type="double">0</DefaultSnapTolerance>
       <LayerSnappingToleranceList type="QStringList">
+        <value>0.000000</value>
+        <value>0.000000</value>
         <value>0.000000</value>
         <value>0.000000</value>
         <value>0.000000</value>
