@@ -100,15 +100,19 @@ library(classInt) # Jenks natural breaks
 library(hydroGOF)   # Has an rmse() function
 library(xtable)   # For making latex/html tables
 library(parallel) # For ruonning things in parallel (e.g. mclapply())
+library(pbapply)  # For progress bar in parallel
 no_cores <- detectCores() / 2  # Detect the number of cores that are available and use half (often CPUs simulate 2 threads per core)
 #no_cores <- 4 # TEMP TO STOP MEMORY HOGGING
 Sys.setenv(MC_CORES=no_cores) # Run on n cores (I'm not sure which of these
 options("mc.cores"=no_cores) # is correct).
 library(Deriv)   # For calculating deriviatives
 library(leaflet) # For doing interactive maps
+library(ShapeChange) # For calculating step change
 
 
-library(sppt) # The spatial point pattern test library (see https://github.com/wsteenbeek/sppt for install instructions)
+# The spatial point pattern test library. See https://github.com/wsteenbeek/sppt for install instructions. Basically:
+# devtools::install_github("wsteenbeek/sppt", force = TRUE)
+library(sppt) 
 
 ```
  
@@ -1064,7 +1068,57 @@ for (index in indices.to.map) {
 
 
 
+### Analysis of change-point using `ShapeChange`
+
+Identify change-point(s) in the graphs of error against resolution using the `ShapeChange` package
+
+Begin by calculating the change-point using the BNER and TOB example results.
+
+```{r changepoints-burgd.example, fig.width=9, fig.height=9 }
+
+# Burglary
+
+# penalized in ShapeChange
+bner.changepoint.1 <- changept(bner.result.diff[["globalS"]] ~ tp(bner.result.diff[["num.cells"]], sh = 1), 
+                             pnt = TRUE, ci = TRUE, param = FALSE) 
+
+# non-penalized in ShapeChange
+bner.changepoint.2 <- changept(bner.result.diff[["globalS"]] ~ tp(bner.result.diff[["num.cells"]], sh = 1), 
+                             ci = TRUE, param = FALSE)
+
+# TOB
+tob.changepoint.1 <-  changept(tob.result.diff[["globalS"]] ~ tp(tob.result.diff[["num.cells"]], sh = 1), 
+                             pnt = TRUE, ci = TRUE, param = FALSE) 
+
+# non-penalized in ShapeChange
+tob.changepoint.2 <-  changept(tob.result.diff[["globalS"]] ~ tp(tob.result.diff[["num.cells"]], sh = 1), 
+                             ci = TRUE, param = FALSE) 
+
+
+par(mfrow=c(2,2))
+plot(bner.changepoint.1)
+plot(bner.changepoint.2)
+plot(tob.changepoint.1)
+plot(tob.changepoint.2)
+
+```
+
+XXXX HERE Now try again but using the larger tests
+
+```{r changepoints-1, fig.width=9, fig.height=9 }
+
+
+
+```
+
+
+
+
+
+
 ### S Index Models
+
+_This has probably now been depricated by the above analysis that uses StepChange to identify the point at which the error changes with resolution_
 
 Prior research showed that a log model was the most successful at representing the curve of Local S against resolution (measured by number of cells). This can be verified by running an earlier version of this file that included cells with and without zero:
 
