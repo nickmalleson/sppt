@@ -1074,44 +1074,79 @@ Identify change-point(s) in the graphs of error against resolution using the `Sh
 
 Begin by calculating the change-point using the BNER and TOB example results.
 
-```{r changepoints-burgd.example, fig.width=9, fig.height=9 }
+```{r changepoints-burgd.example, fig.width=9, fig.height=6 }
+
+# I like my own changepoint plots
+plot.changept <- function(cp, ... ) {
+  plot(cp$x, cp$y, cex=0.2, xlab="Number of Cells", ylab="Global S", ...)
+  abline(v=cp$chpt, col="#fc8d62") # The changepoint
+  abline(v=cp$cibt[1], col="#8da0cb" ) # Lower CI
+  abline(v=cp$cibt[2], col="#8da0cb" ) # Upper CI
+  lines(x=cp$x, y=cp$fhat, lty="dashed", col="#66c2a5", lwd=1.0) # the estimated mean curve
+  legend("bottomleft", legend=c("Estimated mean curve", "Estimated change-point", "Upper/Lower confidence 95% confidence intervals"),
+        lty = c("dashed","solid","solid"), col=c("#66c2a5", "#fc8d62", "#8da0cb"), cex=0.5)
+}
 
 # Burglary
-
-# penalized in ShapeChange
-bner.changepoint.1 <- changept(bner.result.diff[["globalS"]] ~ tp(bner.result.diff[["num.cells"]], sh = 1), 
+bner.changepoint <- changept(bner.result.diff[["globalS"]] ~ tp(bner.result.diff[["num.cells"]], sh = 1), 
                              pnt = TRUE, ci = TRUE, param = FALSE) 
-
-# non-penalized in ShapeChange
-bner.changepoint.2 <- changept(bner.result.diff[["globalS"]] ~ tp(bner.result.diff[["num.cells"]], sh = 1), 
-                             ci = TRUE, param = FALSE)
-
 # TOB
-tob.changepoint.1 <-  changept(tob.result.diff[["globalS"]] ~ tp(tob.result.diff[["num.cells"]], sh = 1), 
+tob.changepoint <-  changept(tob.result.diff[["globalS"]] ~ tp(tob.result.diff[["num.cells"]], sh = 1), 
                              pnt = TRUE, ci = TRUE, param = FALSE) 
 
-# non-penalized in ShapeChange
-tob.changepoint.2 <-  changept(tob.result.diff[["globalS"]] ~ tp(tob.result.diff[["num.cells"]], sh = 1), 
-                             ci = TRUE, param = FALSE) 
 
-
-par(mfrow=c(2,2))
-plot(bner.changepoint.1)
-plot(bner.changepoint.2)
-plot(tob.changepoint.1)
-plot(tob.changepoint.2)
-
+par(mfrow=c(1,2))
+plot.changept(bner.changepoint, main="Burglary", ylim=c(0.5,1))
+plot.changept(tob.changepoint,  main="TOB", ylim=c(0.5,1))
 ```
 
-XXXX HERE Now try again but using the larger tests
+Now calculate the change-points using the full tests.
 
 ```{r changepoints-1, fig.width=9, fig.height=9 }
+# Calculate all four changepoints (one for each crime type) at once
+ch <- mclapply(X=seq(1,length(all)), FUN=function(x) {
+  changept(all[[x]]$r$globalS ~ tp(all[[x]]$r$num.cells, sh = 1), pnt = TRUE, ci = TRUE, param = FALSE)   
+  } 
+)
 
-
+par(mfrow=c(2,2))
+for (i in seq(length(all))) {
+  #r <- all[[i]]$r # This is the results of the msea test
+  name <- all[[i]]$name # This is the name of the crime type
+  c <- ch[[i]]
+  #base <- a$base 
+  #test <- a$test
+  #x <- r$num.cells
+  #y <- r$globalS
+  #c <- changept(y ~ tp(x, sh = 1), pnt = TRUE, ci = TRUE, param = FALSE)   
+  plot.changept(c, main=name, ylim=c(0,1))
+}
+ 
 
 ```
 
+Repeat but disregarding the later calculations 
 
+```{r changepoints-2, fig.width=9, fig.height=9 }
+
+START=10
+END=200
+
+# Calculate all four changepoints at once
+ch <- mclapply(X=seq(1,length(all)), FUN=function(x) {
+  changept(all[[x]]$r$globalS[START:END] ~ tp(all[[x]]$r$num.cells[START:END], sh = 1), pnt = TRUE, ci = TRUE, param = FALSE)   
+  } 
+)
+
+par(mfrow=c(2,2))
+for (i in seq(length(all))) {
+  name <- all[[i]]$name # This is the name of the crime type
+  c <- ch[[i]]
+  plot.changept(c, main=name, ylim=c(0,1))
+}
+ 
+
+```
 
 
 
