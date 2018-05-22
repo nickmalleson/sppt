@@ -1087,8 +1087,10 @@ for (i in 1:length(test.results)) {
 }
 
 bner.results.feather <- data.frame(
+  "iteration" = test.results[["Proportional Difference"]][["BNER"]]$r$iteration,
   "num.cells" = test.results[["Proportional Difference"]][["BNER"]]$r$num.cells,
-  "global_s" = test.results[["Proportional Difference"]][["BNER"]]$r$globalS
+  "global_s"  = test.results[["Proportional Difference"]][["BNER"]]$r$globalS
+  
 )
 
 # Sanity check that these are the same as the results as the ones generated initially, before being organised into lists
