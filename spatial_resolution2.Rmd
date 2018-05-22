@@ -1102,8 +1102,7 @@ write_feather(bner.results.feather, path="./bner_results.feather")
 
 ```
 
-Now use the script XXXX  to look for the change point
-
+Now use the script 'changepoint_mcmc.ipynb'  to look for the change point. _It doesn't work yet, will leave it for now_.
 
 XXXX HERE
 
