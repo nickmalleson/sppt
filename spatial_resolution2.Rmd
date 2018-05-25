@@ -101,7 +101,7 @@ library(hydroGOF)   # Has an rmse() function
 library(xtable)   # For making latex/html tables
 library(parallel) # For ruonning things in parallel (e.g. mclapply())
 library(pbapply)  # For progress bar in parallel
-no_cores <- detectCores() / 2  # Detect the number of cores that are available and use half (often CPUs simulate 2 threads per core)
+no_cores <- detectCores() / 4  # Detect the number of cores that are available and use half (often CPUs simulate 2 threads per core)
 #no_cores <- 4 # TEMP TO STOP MEMORY HOGGING
 Sys.setenv(MC_CORES=no_cores) # Run on n cores (I'm not sure which of these
 options("mc.cores"=no_cores) # is correct).
