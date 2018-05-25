@@ -229,49 +229,10 @@ for (type in crime.types2) {
 
 ```
 
-## Land area data
-
-In the analysis we want to mask cells that aren't over land as these will distort the results. The [Baseline Thematic Mapping Present Land Use Version 1 Spatial Layer](https://catalogue.data.gov.bc.ca/dataset/baseline-thematic-mapping-present-land-use-version-1-spatial-layer) from the [BC Data Catalogue](https://catalogue.data.gov.bc.ca/dataset) has a suitable dataset that can be used for masking. All land with `PLU_LABEL=Urban` will be included. These ares are defined as: 
-
- - "All compact settlements including built up areas of cities, towns and villages as well as isolated units away from settlements such as manufacturing plants, rail yards and military camps. In most cases residential use will predominate in these areas."
- 
-I have downloaded the entire BC dataset to: `./data-raw/BTM_PRESENT_LAND_USE_V1_SVW/` and then also made a smaller version around Vancouver called `BTM_PLU_V1_polygon-cut.shp` (R struggles to read the full file)
- 
-Note that this this excludes Stanley Park, which will mean that some theft of bike / vehicle crimes are disregarded, but the numbers are very small so it wont overly influence the results.
-
-```{r readLandUseData, cache=TRUE}
-
-# Unzip the files into the working directory
-ZIPFILENAME = "./data-raw/BTM_PRESENT_LAND_USE_V1_SVW.zip"
-zipfile <- unzip(ZIPFILENAME)
-
-# Read the shapefile
-bc.land.use <- readOGR(dsn="./BTM_PRESENT_LAND_USE_V1_SVW/", layer = "BTM_PLU_V1_polygon-cut")
-
-# Delete the extracted file
-unlink(zipfile)
-unlink("BTM_PRESENT_LAND_USE_V1_SVW", recursive = TRUE) # a left over directory
-
-# Extract the urban land features (these mark the areas that will be included in the analysis)
-bc.urban <- bc.land.use[bc.land.use$PLU_LABEL=="Urban",]
-
-# Project it
-bc.urban <- spTransform(bc.urban, CRSobj = CRS(proj4string(all.crime)))
-proj4string(bc.urban) <- proj4string(all.crime)
-
-## Get rid of areas that don't intersect any crimes (mostly for efficiency). Use st_intersects
-## (https://gis.stackexchange.com/questions/245136/how-to-subset-point-data-by-outside-of-polygon-data-in-r)
-## All polygons that intersect a point (if not the the output from st_intersects is an integer(0))
-#b = sapply(st_intersects(bc.urban, all.crime),function(x){length(x)>0}) 
-## Subset polygons
-#bc.urban[b] <- bc.urban[b]
-
-rm(ZIPFILENAME, bc.land.use)
-```
 
 ## Areas data
 
-Finally it is useful to have some administrative boundaries. These aren't used in the analysis, but are good for displaying results.
+Finally we need some administrative boundaries. In the analysis we want to mask cells that aren't over land as these will distort the results. These boundaries are also useful in displaying the results.
 
 ```{r readBondariesData }
 vancouver.boundaries <- readOGR(dsn="data-raw/vancouver_all", layer = "areas")
@@ -457,12 +418,13 @@ msea <- function(points1, points2, N=20, n.shifts = 10, mask=NULL, ignore.zeros=
         # Remove any cells that don't intersect the mask?
         if (!is.null(mask)) {
           #browser()
-          # Join spdf to bc.urban. Returns rows for all spdf, which will be NA if there was no join
+          # Join spdf to the mask. Returns rows for all spdf, which will be NA if there was no join
           a <- over(spdf, mask)
-          # Check some cells overlap, otherwise something has almost certainly gone wrong
-          stopifnot(length(which(!is.na(a$PLU_LABEL))  ) > 0 )
-          # Remove those that have NA for the PLU_LABEL (could have chosen any column)
-          spdf <- spdf[which(!is.na(a$PLU_LABEL)),]
+          # Check some cells overlap, otherwise something has almost certainly gone wrong. (Doesn't matter
+          # which field we check so just do first; a[1])
+          stopifnot(length(which(!is.na(a[1]))  ) > 0 )
+          # Remove those that have NA for the first column (could have chosen any)
+          spdf <- spdf[which(!is.na(a[1])),]
           rm(a)
         }
         
@@ -655,13 +617,13 @@ N.SHIFTS <- 5
 STEP <- 1
 
 # (for testing )
-#x <- msea(data1[["base"]], data1[["test"]], N=5, n.shifts=1, step=1, mask=bc.urban,
-#          ignore.zeros = F, return.sobject=FALSE,return.grids=FALSE, 
+#y <- msea(data1[["base"]], data1[["test"]], N=20, n.shifts=1, step=1, mask=vancouver.boundaries,
+#          ignore.zeros = F, return.sobject=TRUE,return.grids=TRUE, 
 #          run.parallel = FALSE, sppt_diff, adj = "none")
 
 # Begin with the old sppt
 tmp <- lapply(X = all, FUN = function(x) { # No longer do these in parallel as the method itself has been parallelised
-  msea(x[['base']], x[['test']], N=N, n.shifts=N.SHIFTS, mask=bc.urban,
+  msea(x[['base']], x[['test']], N=N, n.shifts=N.SHIFTS, mask=vancouver.boundaries,
        ignore.zeros = F, step=STEP, 
        return.sobject=FALSE, # Don't return the s.objects, nor the spatial grids
        return.grids=FALSE,   # to save memory
@@ -677,7 +639,7 @@ gc() # Do some garbage collection after deleting the big temporary objects (mayb
 
 # Now the bootstrap version
 tmp <- lapply(X = all, FUN = function(x) {
-  msea(x[['base']], x[['test']], N=N, n.shifts=N.SHIFTS, mask=bc.urban,
+  msea(x[['base']], x[['test']], N=N, n.shifts=N.SHIFTS, mask=vancouver.boundaries,
        ignore.zeros = F, step=STEP, 
        return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt_boot 
   ) })
@@ -691,7 +653,7 @@ gc() # Do some garbage collection after deleting the big temporary objects (mayb
 
 # Finish with the difference in proportions
 tmp <- lapply(X = all, FUN = function(x) { 
-  msea(x[['base']], x[['test']], N=N, n.shifts=N.SHIFTS, mask=bc.urban,
+  msea(x[['base']], x[['test']], N=N, n.shifts=N.SHIFTS, mask=vancouver.boundaries,
        ignore.zeros = F, step=STEP, 
        return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt_diff, adj = "none" # (note additional argument to sppt_diff)
   ) })
@@ -718,7 +680,7 @@ p2 <- BNER[-s,]
 stopifnot(nrow(p1) + nrow(p2) == nrow(BNER))
 
 bner.result.largesample <- 
-  msea(p1, p2, N=N, n.shifts=N.SHIFTS, mask=bc.urban, ignore.zeros = F, step=STEP, 
+  msea(p1, p2, N=N, n.shifts=N.SHIFTS, mask=vancouver.boundaries, ignore.zeros = F, step=STEP, 
        return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt_diff, adj = "none" # (note additional argument to sppt_diff)
        )
 
@@ -735,14 +697,14 @@ STEP <- 1
 p1 <- BNER[BNER$YEAR==2015,]
 p2 <- BNER[BNER$YEAR==2016,]
 bner.result.diff <- msea(points1 = p1, points2 = p2,
-                    N=N, n.shifts=N.SHIFTS, mask=bc.urban, ignore.zeros = F, step=STEP,
+                    N=N, n.shifts=N.SHIFTS, mask=vancouver.boundaries, ignore.zeros = F, step=STEP,
                     return.sobject=TRUE, return.grids=TRUE,
                     sppt_func = sppt_diff, adj = "none" # (note additional argument to sppt_diff)
 )
 p1 <- TOB[TOB$YEAR==2015,]
 p2 <- TOB[TOB$YEAR==2016,]
 tob.result.diff <- msea(points1 = p1, points2 = p2,
-                    N=N, n.shifts=N.SHIFTS, mask=bc.urban, ignore.zeros = F, step=STEP,
+                    N=N, n.shifts=N.SHIFTS, mask=vancouver.boundaries, ignore.zeros = F, step=STEP,
                     return.sobject=TRUE, return.grids=TRUE,
                     sppt_func = sppt_diff, adj = "none" # (note additional argument to sppt_diff)
 )
@@ -775,62 +737,6 @@ write.csv( data.frame(sapply(
 ```
 
 
-### Large iteration test
-
-And run yet again to test on a very large number of iterations
-
-```{r runMSEA-test, cache=TRUE}
-p1 <- BNER[BNER$YEAR==2015,]
-p2 <- BNER[BNER$YEAR==2016,]
-test.result.normal <- msea(points1 = p1, points2 = p2, N=500, n.shifts=1, ignore.zeros = F, mask=bc.urban,
-                           step=10, return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt)
-test.result.boot   <- msea(points1 = p1, points2 = p2, N=500, n.shifts=1, ignore.zeros = F, mask=bc.urban,
-                           step=10, return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt_boot)
-test.result.diff   <- msea(points1 = p1, points2 = p2, N=500, n.shifts=1, ignore.zeros = F, mask=bc.urban,
-                           step=10, return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt_diff, adj = "none")
-
-save( test.result.normal, test.result.boot, test.result.diff, file="./large_iteration_test.RData")
-rm(p1, p2) # tidy up
-```
-
-Plot the results of the large iteration test:
-
-```{r runMSEA-test-plot, fig.width=11, fig.height=15}
-
-error.stats <- c("rss", "r.squared", "rmse", "globalS", "globalS.robust") # The error stats. to use
-par(mfrow=c(6,length(error.stats))) # One plot for each error statistic using both num.cells and square area
-
-for (type in c("num.cells", "cell.areas")) {
-  for (e in error.stats) {
-     x <- test.result.normal[[type]]
-     y <- test.result.normal[[e]]
-     ylim <- if (e=="globalS" | e=="globalS.robust") c(0,1) else NULL
-     plot(x,y, main=paste0("BNER, ",e,", NORM" ), xlab=type, ylab=paste("Error (",e,")"), ylim=ylim)
-  }
-}
-for (type in c("num.cells", "cell.areas")) {
-  for (e in error.stats) {
-     x <- test.result.boot[[type]]
-     y <- test.result.boot[[e]]
-     ylim <- if (e=="globalS" | e=="globalS.robust") c(0,1) else NULL
-     plot(x,y, main=paste0("BNER, ",e,", BOOT"), xlab=type, ylab=paste("Error (",e,")"), ylim=ylim)
-  }
-}
-for (type in c("num.cells", "cell.areas")) {
-  for (e in error.stats) {
-     x <- test.result.diff[[type]]
-     y <- test.result.diff[[e]]
-     ylim <- if (e=="globalS" | e=="globalS.robust") c(0,1) else NULL
-     plot(x,y, main=paste0("BNER, ",e,", DIFF"), xlab=type, ylab=paste("Error (",e,")"), ylim=ylim)
-  }
-}
-
-# Get rid of these so that they're not in the main RData file. Too big
-rm(test.result.normal, test.result.boot, test.result.diff)
-```
-
-
-
 
 ## Spatial Error Resolution
 
@@ -859,58 +765,9 @@ for (a in all.diff) {
 ```
 
 
-### Comparing Burglary with Large Sample Size
-
-We ran a test (using `sppt_diff`) with *all* the burglary data (half as base, the other half as test). See how that compares to the normal burglary test (using 2015 and 2016 data).
-
-
-```{r compare.sample.sizes, fig.width=9, fig.height=5 }
-#colours  <- brewer.pal(2, "Set3") # Colours for the points
-#s.type = "globalS.robust" # Whether to use robust or non-robust
-
-s.type = "globalS"
-plot(x=bner.result.largesample[["num.cells"]] , 
-     y=bner.result.largesample[[s.type]] , 
-     main="Large sample comparison", xlab="Number of Cells", ylab="S Index", ylim=c(0,1), xlim=c(0,2000), 
-     col=1, pch=1)
-
-points(x=all.diff[[1]]$r[["num.cells"]] , 
-       y=all.diff[[1]]$r[[s.type]] , 
-     col=2, pch=2)
-
-
-legend("bottomright", legend = c("Large sample", "Normal sample"), pch=c(1,2), col=c(1,2))
-
-
-
-```
-
 ### Comparing different Local S Index results
 
 Above we computed the S Index using the 'normal' method, as well as the new 'bootstrap' (`sppt_boot`) and 'proportional difference' (`sppt_diff`). Compare the results for each crime type now using the non-robust index. Also mark on the graphs the points at which I will draw the maps below
-
-First, sanity check that the results from these smaller BNER and TOB checks are comparable to the original ones. They should be, obviously, although the BNER and TOB ones are less comprehensive (they ran for many fewer iterations and shifts). The folowing graphs should look similar
-
-```{r sanity.check.bner.results, fig.width=5, fig.height=3 }
-#Note that all.diff[[1]] is the BNER results and all.diff[[4]] is the TOB
-a <- data.frame("numcells"=all.diff[[1]]$r[["num.cells"]],  
-                "sindex.bner1" = all.diff[[1]]$r[["globalS"]], 
-                "sindex.tob1" = all.diff[[4]]$r[["globalS"]])
-b <- data.frame("numcells"=bner.result.diff[["num.cells"]], "sindex.bner2"= bner.result.diff[["globalS"]])
-c <- data.frame("numcells"=tob.result.diff[["num.cells"]],  "sindex.tob2" = tob.result.diff[["globalS"]])
-
-m <- base::merge(x=a, y=b, all.x=TRUE, by="numcells")
-m <- base::merge(x=m, y=c, all.x=TRUE, by="numcells")
-
-par(mfrow=c(1,2))
-plot(  x=m$numcells, y=m$sindex.bner1, xlim=c(0,4000), main="BNER Sanity check\n(should be the same)")
-points(m$numcells, m$sindex.bner2, col="blue")
-plot(  m$numcells, m$sindex.tob1, xlim=c(0,4000), main="TOB Sanity check\ns(hould be the same)")
-points(m$numcells, m$sindex.tob2, col="blue")
-rm(a,b,c,m)
-```
-
-
 
 ```{r s.index-comparisons1, fig.width=12, fig.height=7 }
 
@@ -1036,15 +893,16 @@ for (index in indices.to.map) {
 }
 
 # The leaflet way:
+# cols=c("#FF0000","#00FF00", "#00FF00","#0000FF") # r,g, b
 # WEIGHT <- 2
 # leaflet() %>%
-# addPolygons( data = spTransform(x = bner.result.diff[["results"]][[1]], CRS("+init=epsg:4326") ), 
+# addPolygons( data = spTransform(x = bner.result.diff[["results"]][[1]], CRS("+init=epsg:4326") ),
 #              col=cols[1], fill=FALSE, weight=WEIGHT) %>%
-# addPolygons( data = spTransform(x = bner.result.diff[["results"]][[2]], CRS("+init=epsg:4326") ), 
+# addPolygons( data = spTransform(x = bner.result.diff[["results"]][[2]], CRS("+init=epsg:4326") ),
 #              col=cols[2], fill=FALSE, weight=WEIGHT) %>%
-# addPolygons( data = spTransform(x = bner.result.diff[["results"]][[3]], CRS("+init=epsg:4326") ), 
+# addPolygons( data = spTransform(x = bner.result.diff[["results"]][[3]], CRS("+init=epsg:4326") ),
 #              col=cols[3], fill=FALSE, weight=WEIGHT) %>%
-# addPolygons( data = spTransform(x = bner.result.diff[["results"]][[4]], CRS("+init=epsg:4326") ), 
+# addPolygons( data = spTransform(x = bner.result.diff[["results"]][[4]], CRS("+init=epsg:4326") ),
 #              col=cols[4], fill=FALSE, weight=WEIGHT) %>%
 # addTiles() #%>%  # Add default OpenStreetMap map tiles
 #   #addCircles()
@@ -1070,8 +928,9 @@ for (index in indices.to.map) {
 ```
 
 
-### Analysis of change-point using Bayesian Inference
+## Future work: Analysis of change-point using Bayesian Inference
 
+### Change-point using Bayesian inference 
 
 Try to identify the change point using Bayesian inference. This example is taking from the 'Inferring Behaviour From Text-Message Data' in the Bayesian Methods for Hackers book.
 
@@ -1104,15 +963,10 @@ write_feather(bner.results.feather, path="./bner_results.feather")
 
 ```
 
-Now use the script 'changepoint_mcmc.ipynb'  to look for the change point. _It doesn't work yet, will leave it for now_.
-
-XXXX HERE
+Now use the script 'changepoint_mcmc.ipynb'  to look for the change point. _No changepoint is found_ :-(
 
 
-
-
-
-### Analysis of change-point using `ShapeChange`
+### Analysis of change-point using `ShapeChange` 
 
 Identify change-point(s) in the graphs of error against resolution using the `ShapeChange` package
 
@@ -1195,288 +1049,6 @@ for (i in seq(length(all))) {
 
 
 
-### S Index Models
-
-_This has probably now been depricated by the above analysis that uses StepChange to identify the point at which the error changes with resolution_
-
-Prior research showed that a log model was the most successful at representing the curve of Local S against resolution (measured by number of cells). This can be verified by running an earlier version of this file that included cells with and without zero:
-
- - https://github.com/nickmalleson/sppt/blob/2692a3676fa6c58f9041b637b0f649ec4cc0b908/spatial_resolution.Rmd
-
-Plot the log model and its derivatives.
-
-```{r s.model-all-log, fig.width=11, fig.height=11 }
-
-range01 <- function(x){(x-min(x))/(max(x)-min(x))} # (https://stackoverflow.com/questions/5665599/range-standardization-0-to-1-in-r#5665644)
-
-
-options(scipen=1) # A bit of scientific notation is OK
-par(mfrow=c(length(all),4))
-
-START <- 10 # Drop those first few really big cells
-END   <- length(all[[1]]$r$num.cells)
-
-FORM.LOG <- y ~ log(x) # A formula and function for log(x)
-
-col1 <- "#fc8d59"
-col2 <- "#555555"
-col3 <- "#99d594"
-
-for (a in all) {
-  r <- a$r # This is the results of the msea test
-  name <- a$name # This is the name of the crime type
-  base <- a$base # Base and test points (not actually needed here)
-  test <- a$test
-  
-  x <- r$num.cells[START:END]
-  y <- r$globalS[START:END]
-  
-  # Calculate models for points using FORM
-  m.log  <- lm( FORM.LOG,  data=list("x"=x, "y"=y) )
-  
-  # Check that they have the extected number of coefficients
-  stopifnot(length(coef(m.log ))==2)
-  
-  # Calculate gradients
-  
-  # Function to differentiate.
-  alpha <- coef(m.log)[1]
-  beta <-  coef(m.log)[2]
-  FUNC.log <- function(x) alpha + beta*log(x)
-
-  stopifnot(! (FALSE %in% (predict(m.log ) == FUNC.log (x)))) # Check function has been specified correctly
-  
-  # Differentiate the functions using three derivatives
-  d.log1 <- Deriv( f = FUNC.log,  x="x", nderiv = 1 )
-  d.log2 <- Deriv( f = FUNC.log,  x="x", nderiv = 2 )
-  d.log3 <- Deriv( f = FUNC.log,  x="x", nderiv = 3 )
-  
-  grads.log1 <- vapply(X = x, FUN=d.log1, FUN.VALUE = numeric(1))
-  grads.log2 <- vapply(X = x, FUN=d.log2, FUN.VALUE = numeric(1))
-  grads.log3 <- vapply(X = x, FUN=d.log3, FUN.VALUE = numeric(1))
-  
-  # Try to find the 'elbow'
-  elbow  <- x[min(which(grads.log1 < 0.00002))]
-  elbow2  <- x[min(which(grads.log1 < 0.00001))]
-  elbow3 <- x[min(which(grads.log1 < 0.0001))]
-  elbow4 <- x[min(which(grads.log1 < 0.001))]
-
-  # Plot the original points
-  plot(  x, y, main=name, col="#999999", pch='o', #ylim=c(0,1)
-       xlab="Number of Cells", ylab="Global S Index")
-  #abline(v=x[which.min(abs(grads.log1 - 1))], col="blue", lty=2, lwd=2) # Point at which the gradient is closest to 0
-  
-  # Add the model
-  lines(x=x, y=predict(m.log ), col=1, lwd=2)
-  
-  # Add horizonatal and vertical lines at the point that the first derivative is equal to beta (this is the 'elbow')
-  #abline(v=beta, col="red")
-  
-  # Add vertical line at the elbow when beta becomes very small
-  #abline(v=elbow,  col="red")
-  abline(v=elbow,  col="red")
-  abline(v=elbow2,  col="green")
-  abline(v=elbow3,  col="blue")
-  abline(v=elbow4,  col="orange")
-  
-  # Add the equation to the graph
-  #mtext(paste0("alpha = ",round(alpha,3),"\nbeta = ",round(beta,3) ), side=4, line=-8, las=2)
-  mtext(paste0("y = ",round(alpha,3)," + ",round(beta,3),"*ln(x)","\n",
-               "elbow"," = ", round(elbow,5)
-               ), side=4, line=-15, las=2)
-  
-
-  
-  # Also plot the derivatives as a separate graph
-  plot( x=x, y=grads.log1, col=col1, pch=1, ylab="Gradient", main="1st Derivative",ylim=c(0,0.0005))
-  #abline(v=x[which.min(abs(grads.log1 - 1))], col="blue", lty=2, lwd=2) # Point at which the gradient is closest to 0
-  #abline(h=0, lty=2, lwd=2) # y=0
-  
-  plot( x=x, y=grads.log2, col=col2, pch=1, ylab="Gradient", main="2nd Derivative", ylim=c(-0.0000005,0.0000005))
-  #abline(v=x[which.min(abs(grads.log2 - 0))], col="blue", lty=2, lwd=2) # Point at which the gradient is closest to 0
-  #abline(h=0, lty=2) # y=0
-  
-  plot( x=x, y=grads.log3, col=col3, pch=1, ylab="Gradient", main="3rd Derivative", ylim=c(0,0.00000000001))
-  #abline(v=x[which.min(abs(grads.log2 - 0))], col="blue", lty=2, lwd=2) # Point at which the gradient is closest to 0
-  #abline(h=0, lty=2) # y=0
-  
-  
-  #lines(abline(v=x[which.min(abs(grads.sqrt - 0))], col=col2, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-  #lines(abline(v=x[which.min(abs(grads.log  - 0))], col=col3, lty=2, lwd=2)) # Point at which the gradient is closest to 0
-  
-  #legend("topright", legend=c("log d1", "log d2", "log d3"), pch="o", col=c(col1,col2,col3))
-  
-}
-
-```
-
-
-It looks like the point at which the change in S-Index is < 0.00002 successfully captures the 'elbow' (the red line). Redo the charts above to make this clearer.
-
-Begin by calculating the elbow and some other useful things for each crime
-
-```{r calc_model_and_elbow}
-
-FORM.LOG <- y ~ log(x) # A formula and function for log(x)
-
-ELBOW_THRESHOLD <- 0.00002
-
-for (i in 1:length(all)) {
-  r     <- all[[i]]$r   # This is the results of the msea test
-  name <- all[[i]]$name # This is the name of the crime type
-  #base <- all[[i]]$base # Base and test points (not actually needed here)
-  #test <- all[[i]]$test
-  
-  x <- r$num.cells[START:END]
-  y <- r$globalS[START:END]
-  x.sqm <- r$cell.areas[START:END] # Square area of each cell (not used in the analysis)
-  
-  # Calculate models for points using FORM
-  m.log  <- lm( FORM.LOG,  data=list("x"=x, "y"=y) )
-  
-  # Check that they have the extected number of coefficients
-  stopifnot(length(coef(m.log ))==2)
-  
-  # Calculate gradients
-  
-  # Function to differentiate.
-  alpha <- coef(m.log)[1]
-  beta <-  coef(m.log)[2]
-  FUNC.log <- function(x) alpha + beta*log(x)
-
-  stopifnot(! (FALSE %in% (predict(m.log ) == FUNC.log (x)))) # Check function has been specified correctly
-  
-  # Differentiate the function (1st derivative)
-  d.log1 <- Deriv( f = FUNC.log,  x="x", nderiv = 1 )
-  grads.log1 <- vapply(X = x, FUN=d.log1, FUN.VALUE = numeric(1))
-  
-  # Find the 'elbow' and store this as part of the list of all crimes
-  elbox.index <- min(which(grads.log1 < ELBOW_THRESHOLD)) # The index at which the elbow crosses the x axis
-  elbow       <- x[elbox.index] # The elbow itself (x axis value; number of cells)
-  elbow.sqm   <- x.sqm[elbox.index] # The elbow in square area of cell units (rather than total number of cells)
-  
-  # The point at which the elbow hits the y axis
-  elbow.y <- FUNC.log(elbow)
-  
-  # Remember some things
-  all[[i]]$x <- x
-  all[[i]]$y <- y
-  all[[i]]$x.sqm <- x.sqm
-  
-  all[[i]]$alpha <-alpha
-  all[[i]]$beta <- beta
-  
-  all[[i]]$elbox.index <- elbox.index
-  all[[i]]$elbow <- elbow
-  all[[i]]$elbow.sqm <- elbow.sqm
-  all[[i]]$elbow.y <- elbow.y
-  
-  all[[i]]$d.log1 <- d.log1
-  all[[i]]$m.log <- m.log
-}
-
-```
-
-Make a table of the different elbow values using the current threshold of: `r ELBOW_THRESHOLD`.
-
-```{r model_and_elbow-table, results="asis"}
-
-elbow.table <- data.frame(
-    "Crime Type" = vapply(X = all, FUN.VALUE = character(1), FUN=function(a) a$name),
-    "Elbow - Number of Cells)" = vapply(X = all, FUN.VALUE = integer(1), FUN=function(a) as.integer(round(a$elbow) ) ) ,
-    "Elbow - Square Area)" = vapply(X = all, FUN.VALUE = integer(1), FUN=function(a) as.integer(round(a$elbow.sqm) ) )
-    )
-
-xtable(elbow.table, type="html")
-
-```
-A bar chart to make the table easier to perceive
-
-```{r model_and_elbow-barchart }
-barplot(height = elbow.table$Elbow...Square.Area., names.arg = elbow.table$Crime.Type, 
-        ylab="Elbow (square area of cells)", main = "Elbow values for different crime types" )
-
-# A pdf for the paper
-pdf(file="./figs_for_paper/model_and_elbow-barchart.pdf", width=7, height=4)
-barplot(height = elbow.table$Elbow...Square.Area., names.arg = elbow.table$Crime.Type, 
-        ylab="Square area of cells")
-dev.off()
-```
-
-Finally the full graph with tangents etc.
-
-```{r model_and_elbow-graph, fig.width=9, fig.height=7 }
-
-options(scipen=1) # A bit of scientific notation is OK
-par(mfrow=c(length(all)/2, length(all)/2))
-
-do.plot <- function(i) {
-  a <- all[[i]]
-  name <- a$name # This is the name of the crime type
-  # Plot the original points
-  plot(  a$x, a$y, main=name, col="#999999", pch='o', #ylim=c(0,1)
-       xlab="Number of Cells", ylab="Global S Index")
- 
-  # Plot the tangent 
-  yint <- a$elbow.y - (a$d.log1(a$elbow)*a$elbow) # Y intercept of the tangent
-  abline(a = yint, b = a$d.log1(a$elbow), lty="dashed", lwd=2) # The gradient is  d.log1(elbow)
-  
-  # Add the model
-  lines(x=x, y=predict(a$m.log), col=1, lwd=2)
-  
-  # Add vertical and horizontal line at the elbow and a point
-  abline(v=a$elbow,   col="red", lty="dashed")
-  abline(h=a$elbow.y, col="red", lty="dashed")
-  points(x=a$elbow, y=a$elbow.y, col="blue", pch=16, cex=2)
-  
-  # Add the equation to the graph
-  mtext(paste0("y = ",round(a$alpha,3)," + ",round(a$beta,3),"*ln(x)","\n",
-               "elbow (x)"," = ", round(a$elbow,5),"\n",
-               "elbow (y)"," = ", round(a$elbow.y,5)
-               ), side=4, line=-15, las=2, cex=0.8)
-  
-  
-}
-
-# A plot for knitr
-for (i in 1:length(all)) {
-  do.plot(i)
-}
-
-# A pdf for the paper
-pdf(file="./figs_for_paper/model_and_elbow.pdf", width=9, height=7)
-par(mfrow=c(length(all)/2, length(all)/2))
-for (i in 1:length(all)) {
-  do.plot(i)
-}
-dev.off()
-
-
-```
-
-
-
-Do a single graph that we can use for the paper (when explaining how the method works). Use TOB because the model fits the data well (it's only for illustrative purposes so doesn't really matter.)
-
-
-```{r example_error_graph_for_paper, fig.width=9, fig.height=6 }
-options(scipen=1) # A bit of scientific notation is OK
-par(mfrow=c(1,1))
-
-do.plot(4)
-
-pdf(file="./figs_for_paper/example_error_graph_for_paper.pdf", width=9, height=7)
-do.plot(4)
-dev.off()
-
-
-```
-
-
-_Could also do **Lorenze curves** at some of the resolutions (as per Eck's [review of crime concentrations](https://crimesciencejournal.springeropen.com/articles/10.1186/s40163-017-0070-4)).
-
-
-
 ## Map the Local S Index
 
 Map the Local S for a few grids, just out of interest
@@ -1550,39 +1122,9 @@ warnings()
 
 Save the results for mapping or whatever:
 
-XXXX This needs updating because now I don't actually generate the spatial grids when running the anlaysis because they take up too much room. The old version of this file did that:
-
- - https://github.com/nickmalleson/sppt/blob/2692a3676fa6c58f9041b637b0f649ec4cc0b908/spatial_resolution.Rmd
-
 ```{r save.results, warning=FALSE }
 # All of the R objects. Makes it easy to re-read the results
-save.image("spatial_resolution.RData")
-
-# # The numbers used to make the graphs
-# write.csv(
-#   #data.frame("CellArea"=r$cell.areas, "NumCells"=r$num.cells, "RSS"=r$rss, "RSquared"=r$r.squared, "RMSE"=r$rmse,
-#   #           "GlobalS" = r$globalS, "GlobalSRobust" = r$globalS.robust), 
-#   data.frame("CellArea"=r.withzeros$cell.areas, "NumCells"=r.withzeros$num.cells, "RSS"=r.withzeros$rss,
-#              "RSquared"=r.withzeros$r.squared, "RMSE"=r.withzeros$rmse,
-#              "GlobalS" = r.withzeros$globalS, "GlobalSRobust" = r.withzeros$globalS.robust), 
-#   file = "ROUT/results.csv")
-# 
-# # Delete old shapefiles
-# 
-# files <- list.files(path = "./ROUT", pattern = "result_")
-# for (f in files) {
-#   file.remove(paste0("./ROUT/",f))
-# }
-# 
-# # Write new ones, using the i and j counters from the nested loops to name the files
-# for (x in 1:length(r.withzeros$results)) {
-#   res <- r.withzeros$results[[x]]
-#   i <-   r.withzeros$iteration[x]
-#   j <-   r.withzeros$shift[x]
-#   writeOGR(obj = res, dsn = "./ROUT", layer = paste0("result_",i,"_",j), 
-#            driver = "ESRI Shapefile", overwrite_layer = TRUE)
-# }
-
+save.image("spatial_resolution2.RData")
 
 ```
 
