@@ -109,11 +109,14 @@ library(Deriv)   # For calculating deriviatives
 library(leaflet) # For doing interactive maps
 library(ShapeChange) # For calculating step change
 library(feather) #For writing to python
+library(ggplot2)
+library(gridExtra) # For arranging two grids side by side
 
 
 # The spatial point pattern test library. See https://github.com/wsteenbeek/sppt for install instructions. Basically:
 # devtools::install_github("wsteenbeek/sppt", force = TRUE)
 library(sppt) 
+
 
 ```
  
@@ -763,6 +766,41 @@ for (a in all.diff) {
   }
 }
 ```
+
+Repeat, fitting a smooth curve with confidence intervals.
+
+```{r s.model-all-errors2, fig.width=11, fig.height=11}
+options(scipen=1) # A bit of scientific notation is OK
+error.stats <- c("rss", "r.squared", "rmse", "globalS", "globalS.robust") # The error stats. to use
+plots = list()
+plot.count <- 1
+
+for (i in 1:length(all.diff)) {
+
+  a <- all.diff[[i]]
+  r <- a$r # This is the results of the msea test
+  name <- a$name # This is the name of the crime type
+  
+  for (e in error.stats) {
+     x <- r$num.cells
+     y <- r[[e]]
+     the.plot <- ggplot(data = data.frame("x"=x, "y"=y ), mapping = aes(x,y)) +
+        geom_point(size=0.1, color="black") + 
+        #geom_hex(bins=15, show.legend = FALSE) +
+        geom_smooth(method="loess", se=TRUE, level=0.99 )+ #, color="red") +
+        ylab(paste("Error (",e,")"))+
+        xlab("Number of Cells")+
+        ggtitle(paste0(name,", ",e))
+     plots[[plot.count]] <- the.plot
+     plot.count <- plot.count + 1
+  }
+}
+
+do.call("grid.arrange", c(plots, ncol=5))
+
+#g <- grid.arrange(plot1, plot2, nrow=2)
+```
+
 
 
 ### Comparing different Local S Index results
