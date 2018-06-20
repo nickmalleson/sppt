@@ -511,11 +511,11 @@ msea <- function(points1, points2, N=20, n.shifts = 10, mask=NULL, ignore.zeros=
         # Mean Similarity. Areas are either similar (1) or dissimilar (0). Take the mean.
         # This is only possible using the newer sppt functions like sppt_diff
         if ( isTRUE(all.equal(sppt_func, sppt_diff))) { # Check using sppt_diff
-          parallel.output[["mean.similarity"]]        <- c(parallel.output[["similarity"]],        mean( ( spdf@data$similarity) ) )
-          parallel.output[["mean.similarity.robust"]] <- c(parallel.output[["similarity.robust"]], mean( ( spdf@data$similarity.robust) ) )
+          parallel.output[["mean.similarity"]]        <- c(parallel.output[["mean.similarity"]],        mean( ( spdf@data$similarity) ) )
+          parallel.output[["mean.similarity.robust"]] <- c(parallel.output[["mean.similarity.robust"]], mean( ( spdf@data$similarity.robust) ) )
         } else {
-          parallel.output[["mean.similarity"]] <-        NA
-          parallel.output[["mean.similarity.robust"]] <- NA
+          parallel.output[["mean.similarity"]] <-        c(parallel.output[["mean.similarity"]], NA)
+          parallel.output[["mean.similarity.robust"]] <- c(parallel.output[["mean.similarity.robust"]], NA)
         }
         
         
@@ -544,26 +544,25 @@ msea <- function(points1, points2, N=20, n.shifts = 10, mask=NULL, ignore.zeros=
   
   iterations <- seq(from=1,to=N,by=step)
   pout <- if (run.parallel) mclapply(X=iterations, FUN= run.resolution ) else lapply(X=iterations, FUN= run.resolution )
-  #browser()
   
   # Now we have a big list with all of the results and other useful information in it.
   # The pout list has one item for each resolution. Extract the separate parts into their
   # own variables to make it easier to see what's going on. The code below is extra
   # confusing because sapply returns a matrix (resolutions are rows, shifts are columns (or
   # the other way round)) so c() is needed to vectorise the matrix.
-  results <-         c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["results"]] ))
-  num.cells <-       c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["num.cells"]] ))
-  cell.areas <-      c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["cell.areas"]] ))
-  rss <-             c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["rss"]] ))
-  r.squared <-       c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["r.squared"]] ))
-  rmse <-            c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["rmse"]] ))
-  globalS <-        c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["globalS"]] ))
-  globalS.robust <-  c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["globalS.robust"]] ))
-  mean.similarity <- c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["mean.similarity"]] ))
+  results <-                c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["results"]] ))
+  num.cells <-              c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["num.cells"]] ))
+  cell.areas <-             c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["cell.areas"]] ))
+  rss <-                    c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["rss"]] ))
+  r.squared <-              c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["r.squared"]] ))
+  rmse <-                   c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["rmse"]] ))
+  globalS <-                c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["globalS"]] ))
+  globalS.robust <-         c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["globalS.robust"]] ))
+  mean.similarity        <- c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["mean.similarity"]] ))
   mean.similarity.robust <- c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["mean.similarity.robust"]] ))
-  s.object <-        c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["s.object"]] ))
-  iteration <-       c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["iteration"]] ))
-  shift <-           c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["shift"]] ))
+  s.object <-               c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["s.object"]] ))
+  iteration <-              c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["iteration"]] ))
+  shift <-                  c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["shift"]] ))
   
   # Delete the results that used one single large cell as these don't mean anything
   results[[1]] <- NULL
@@ -579,7 +578,6 @@ msea <- function(points1, points2, N=20, n.shifts = 10, mask=NULL, ignore.zeros=
   s.object <-       s.object       [2:length(s.object)]
   iteration <-      iteration      [2:length(iteration)]
   shift <-          shift          [2:length(shift)]
-  
   
   # Sanity check - global errors and other info should be vectors of the same length
   stopifnot(
@@ -644,8 +642,8 @@ all.diff <- list(data1, data2, data3, data4)
 
 rm(data1, data2, data3, data4)
 
-N <- 100
-N.SHIFTS <- 5
+N <- 50
+N.SHIFTS <- 10
 STEP <- 1
 
 # (for testing )
