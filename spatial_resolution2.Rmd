@@ -101,7 +101,7 @@ library(hydroGOF)   # Has an rmse() function
 library(xtable)   # For making latex/html tables
 library(parallel) # For ruonning things in parallel (e.g. mclapply())
 library(pbapply)  # For progress bar in parallel
-no_cores <- detectCores() / 4  # Detect the number of cores that are available and use half (often CPUs simulate 2 threads per core)
+no_cores <- detectCores() / 2  # Detect the number of cores that are available and use half (often CPUs simulate 2 threads per core)
 #no_cores <- 4 # TEMP TO STOP MEMORY HOGGING
 Sys.setenv(MC_CORES=no_cores) # Run on n cores (I'm not sure which of these
 options("mc.cores"=no_cores) # is correct).
@@ -315,6 +315,12 @@ The following defines a function that will run the method (_the R code has been 
 #'  \code{globalS.robust} - a vector of length N with the robust version of Andresen's Global S index that 
 #'    ignores areas with no points (note that if \code{ignore.zeros} is \code[TRUE] then this is the
 #'    same as the \code{globalS})
+#'
+#'  \code{mean.similarity} - a vector of length N with the mean similarity (areas with 1 are similar, 0
+#'     dissimilar). This is only available when sppt_func = sppt_diff and will be NA otherwise
+#' 
+#'  \code{mean.similarity.robust} - a vector of length N with the mean similarity (areas with 1 are similar, 0
+#'     dissimilar). This is only available when sppt_func = sppt_diff and will be NA otherwise
 #' 
 #'  \code{iteration} - a vector of length N with the iteration number that this grid is part of
 #' 
@@ -359,6 +365,8 @@ msea <- function(points1, points2, N=20, n.shifts = 10, mask=NULL, ignore.zeros=
     parallel.output[["rmse"]] <- c()
     parallel.output[["globalS"]] <- c()
     parallel.output[["globalS.robust"]] <- c()
+    parallel.output[["mean.similarity"]] <- c()
+    parallel.output[["mean.similarity.robust"]] <- c()
     
     # Keep a link to the object that is returned from the call to sppt. Useful for debugging mostly.
     parallel.output[["s.object"]] <- c()
@@ -475,6 +483,7 @@ msea <- function(points1, points2, N=20, n.shifts = 10, mask=NULL, ignore.zeros=
         spdf@data$ConfLowP          <- s@data$ConfLowP
         spdf@data$ConfUppP          <- s@data$ConfUppP
         spdf@data$similarity        <- s@data$similarity
+        spdf@data$similarity.robust <- s@data$similarity.robust
         
         # Optionally store this result by appending it to the end of the list of results that we have so far
         if (return.grids) {
@@ -492,11 +501,23 @@ msea <- function(points1, points2, N=20, n.shifts = 10, mask=NULL, ignore.zeros=
                                             summary(lm(spdf@data$points1 ~ spdf@data$points2, data=spdf@data))$r.squared )
         # RMSE
         parallel.output[["rmse"]] <- c(parallel.output[["rmse"]], rmse(spdf@data$points1, spdf@data$points2) )
+
         # Global S Index (normal and robust). In globalS, each area has same value for global S, so take 1st row
         # arbitrarily. For robust version, need to find the first row that isn't NA (hence use min()).
         parallel.output[["globalS"]] <- c(parallel.output[["globalS"]], s@data[1,"globalS"]        ) 
         parallel.output[["globalS.robust"]] <- c(parallel.output[["globalS.robust"]],
                                                  s@data[min(which(!is.na(s@data$globalS.robust))),"globalS.robust"] )
+        
+        # Mean Similarity. Areas are either similar (1) or dissimilar (0). Take the mean.
+        # This is only possible using the newer sppt functions like sppt_diff
+        if ( isTRUE(all.equal(sppt_func, sppt_diff))) { # Check using sppt_diff
+          parallel.output[["mean.similarity"]]        <- c(parallel.output[["similarity"]],        mean( ( spdf@data$similarity) ) )
+          parallel.output[["mean.similarity.robust"]] <- c(parallel.output[["similarity.robust"]], mean( ( spdf@data$similarity.robust) ) )
+        } else {
+          parallel.output[["mean.similarity"]] <-        NA
+          parallel.output[["mean.similarity.robust"]] <- NA
+        }
+        
         
         # Optionally sometimes useful to keep a reference to the raw results returned by the sppt call (mostly for debugging)
         if (return.sobject) {
@@ -530,30 +551,34 @@ msea <- function(points1, points2, N=20, n.shifts = 10, mask=NULL, ignore.zeros=
   # own variables to make it easier to see what's going on. The code below is extra
   # confusing because sapply returns a matrix (resolutions are rows, shifts are columns (or
   # the other way round)) so c() is needed to vectorise the matrix.
-  results <-        c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["results"]] ))
-  num.cells <-      c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["num.cells"]] ))
-  cell.areas <-     c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["cell.areas"]] ))
-  rss <-            c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["rss"]] ))
-  r.squared <-      c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["r.squared"]] ))
-  rmse <-           c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["rmse"]] ))
+  results <-         c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["results"]] ))
+  num.cells <-       c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["num.cells"]] ))
+  cell.areas <-      c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["cell.areas"]] ))
+  rss <-             c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["rss"]] ))
+  r.squared <-       c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["r.squared"]] ))
+  rmse <-            c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["rmse"]] ))
   globalS <-        c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["globalS"]] ))
-  globalS.robust <- c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["globalS.robust"]] ))
-  s.object <-       c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["s.object"]] ))
-  iteration <-      c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["iteration"]] ))
-  shift <-          c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["shift"]] ))
+  globalS.robust <-  c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["globalS.robust"]] ))
+  mean.similarity <- c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["mean.similarity"]] ))
+  mean.similarity.robust <- c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["mean.similarity.robust"]] ))
+  s.object <-        c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["s.object"]] ))
+  iteration <-       c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["iteration"]] ))
+  shift <-           c(sapply(X=1:length(pout), FUN=function(x) pout[[x]][["shift"]] ))
   
   # Delete the results that used one single large cell as these don't mean anything
   results[[1]] <- NULL
-  num.cells <-      num.cells     [2:length(num.cells)]
-  cell.areas <-     cell.areas    [2:length(cell.areas)]
-  rss <-            rss           [2:length(rss)]
-  r.squared <-      r.squared     [2:length(r.squared)]
-  rmse <-           rmse          [2:length(rmse)]
-  globalS <-        globalS       [2:length(globalS)]
-  globalS.robust <- globalS.robust[2:length(globalS.robust)]
-  s.object <-       s.object      [2:length(s.object)]
-  iteration <-      iteration     [2:length(iteration)]
-  shift <-          shift         [2:length(shift)]
+  num.cells <-      num.cells      [2:length(num.cells)]
+  cell.areas <-     cell.areas     [2:length(cell.areas)]
+  rss <-            rss            [2:length(rss)]
+  r.squared <-      r.squared      [2:length(r.squared)]
+  rmse <-           rmse           [2:length(rmse)]
+  globalS <-        globalS        [2:length(globalS)]
+  globalS.robust <- globalS.robust [2:length(globalS.robust)]
+  mean.similarity <-mean.similarity[2:length( mean.similarity)]
+  mean.similarity.robust <-mean.similarity[2:length( mean.similarity.robust)]
+  s.object <-       s.object       [2:length(s.object)]
+  iteration <-      iteration      [2:length(iteration)]
+  shift <-          shift          [2:length(shift)]
   
   
   # Sanity check - global errors and other info should be vectors of the same length
@@ -564,6 +589,8 @@ msea <- function(points1, points2, N=20, n.shifts = 10, mask=NULL, ignore.zeros=
     length(num.cells) == length(rmse) & 
     length(num.cells) == length(globalS) & 
     length(num.cells) == length(globalS.robust) &
+    length(num.cells) == length(mean.similarity) &
+    length(num.cells) == length(mean.similarity.robust) &
     length(num.cells) == length(s.object) &
     length(num.cells) == length(iteration) &
     length(num.cells) == length(shift)
@@ -579,6 +606,8 @@ msea <- function(points1, points2, N=20, n.shifts = 10, mask=NULL, ignore.zeros=
     "rmse" = rmse,
     "globalS" = globalS,
     "globalS.robust" = globalS.robust,
+    "mean.similarity" = mean.similarity,
+    "mean.similarity.robust" = mean.similarity.robust,
     "s.object" = if (return.sobject) s.object else NA,
     "iteration" = iteration,
     "shift" = shift
@@ -740,6 +769,37 @@ write.csv( data.frame(sapply(
 ```
 
 
+For info, graph those errors.
+
+```{r graph.bner.result, fig.width=10, fig.height=10 }
+errors.temp <- c("rss", "r.squared", "rmse", "globalS", "globalS.robust", "mean.similarity", "mean.similarity.robust") # The error stats. to use
+options(scipen=1) # A bit of scientific notation is OK
+r <- bner.result.diff
+#r <- tob.result.diff
+
+plots <- list()
+plot.count <- 1
+
+for (e in errors.temp) {
+  x <- r$num.cells
+  y <- r[[e]]
+  the.plot <- ggplot(data = data.frame("x"=x, "y"=y ), mapping = aes(x,y)) +
+        geom_point(size=0.1, color="black") + 
+        #geom_hex(bins=15, show.legend = FALSE) +
+        geom_smooth(method="loess", se=TRUE, level=0.99 )+ #, color="red") +
+        ylab(paste("Error (",e,")"))+
+        xlab("Number of Cells")+
+        ggtitle(paste0("BNER",", ",e))
+     plots[[plot.count]] <- the.plot
+     plot.count <- plot.count + 1
+}
+
+
+do.call("grid.arrange", c(plots, ncol=4))
+rm(errors.temp)
+
+```
+
 
 ## Spatial Error Resolution
 
@@ -751,7 +811,7 @@ It's a little odd that the RSS and RMSE values decrease with the number of cells
 
 ```{r s.model-all-errors, fig.width=11, fig.height=11 }
 options(scipen=1) # A bit of scientific notation is OK
-error.stats <- c("rss", "r.squared", "rmse", "globalS", "globalS.robust") # The error stats. to use
+error.stats <- c("rss", "r.squared", "rmse", "globalS", "globalS.robust", "mean.similarity", "mean.similarity.robust") # The error stats. to use
 par(mfrow=c(length(all),length(error.stats))) # One plot for each error statistic
 
 for (a in all.diff) {
@@ -759,10 +819,15 @@ for (a in all.diff) {
   name <- a$name # This is the name of the crime type
   
   for (e in error.stats) {
-     x <- r$num.cells
-     y <- r[[e]]
-     ylim <- if (e=="globalS" | e=="globalS.robust") c(0,1) else NULL
-     plot(x,y, main=paste0(name,", ",e), xlab="Number of Cells", ylab=paste("Error (",e,")"), ylim=ylim)
+    if (is.null(r[[e]])) {
+      plot(1,1, col="red", main=paste0("Error. Statistic:\n'",e, "' not found"))
+    } else {
+      x <- r$num.cells
+      y <- r[[e]]
+      ylim <- if (e=="globalS" | e=="globalS.robust") c(0,1) else NULL
+      plot(x,y, main=paste0(name,", ",e), xlab="Number of Cells", ylab=paste("Error (",e,")"), ylim=ylim)
+
+    }
   }
 }
 ```
@@ -771,7 +836,6 @@ Repeat, fitting a smooth curve with confidence intervals.
 
 ```{r s.model-all-errors2, fig.width=11, fig.height=11}
 options(scipen=1) # A bit of scientific notation is OK
-error.stats <- c("rss", "r.squared", "rmse", "globalS", "globalS.robust") # The error stats. to use
 plots = list()
 plot.count <- 1
 
@@ -1097,12 +1161,12 @@ statistic <- "localS" # The statistic to map
 par(mfrow=c(2,2))
 
 for (i in 4:1) {
-  index <- round(length(bner.result$results) / i )
+  index <- round(length(bner.result.diff$results) / i )
   
   # Create the shading manually
   s <- list("breaks"=c(-0.5, 0, 0.5), "cols"=c("#fc8d59","#ffffbf", "#ffffbf","#99d594"))
   
-  choropleth(bner.result$results[[index]], bner.result$results[[index]]@data[,statistic], main=paste(statistic,i),
+  choropleth(bner.result.diff$results[[index]], bner.result.diff$results[[index]]@data[,statistic], main=paste(statistic,i),
              lty=0, shading = s)
   points(p1, col='blue', cex=0.5)
   points(p2, col='red',  cex=0.5)
@@ -1116,15 +1180,15 @@ Also do a fuzzy map of the difference in local S values.
 # Maximum number of results we can map is 256 because transparency is represented by a two-digit hex
 # I actually set this as lower otherwise it doesn't work (all the colours add up to red)
 results.to.map <- NA
-if (length(bner.result$results) > 50) {
-  results.to.map <- sample(x=1:length(bner.result$results), size=50, replace = FALSE )
+if (length(bner.result.diff$results) > 50) {
+  results.to.map <- sample(x=1:length(bner.result.diff$results), size=50, replace = FALSE )
   print("Only mapping 50 of all grids ")
 } else {
-  results.to.map <- 1:(length(bner.result$results)-1)
+  results.to.map <- 1:(length(bner.result.diff$results)-1)
 }
 
 par(mfrow=c(1,1))
-last.result <- bner.result$results[[length(bner.result$results)]] # Convenience for list result generated (the smallest grid)
+last.result <- bner.result.diff$results[[length(bner.result.diff$results)]] # Convenience for list result generated (the smallest grid)
 
 # Shading
 s.noalpha <- list("breaks"=c(-0.5, 0, 0.5), 
@@ -1139,7 +1203,7 @@ choropleth(
   )
 
 for ( index in results.to.map) {
-  choropleth( bner.result$results[[index]], bner.result$results[[index]]@data[,statistic], shading = s, lty=0, add=TRUE )
+  choropleth( bner.result.diff$results[[index]], bner.result.diff$results[[index]]@data[,statistic], shading = s, lty=0, add=TRUE )
 }
 
 # For the legend, redo the shading as above but without the alpha (don't want the legend colours to be transparent)
