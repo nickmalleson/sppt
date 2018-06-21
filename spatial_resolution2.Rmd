@@ -109,11 +109,7 @@ library(Deriv)   # For calculating deriviatives
 library(leaflet) # For doing interactive maps
 #library(ShapeChange) # For calculating step change
 library(feather) #For writing to python
-<<<<<<< HEAD
 library(ggplot2)  # For graphs
-=======
-library(ggplot2)
->>>>>>> a7cfed73bea5022fe35277d456da824b2e4dd5b9
 library(gridExtra) # For arranging two grids side by side
 
 
@@ -770,10 +766,9 @@ write.csv( data.frame(sapply(
 #save.image('temp.RData')
 ```
 
-Quick test: doesif we do the analysis with more points, we should see the elbow occur later, and higher Global S values
+Quick test: if we do the analysis with more points, we should see the elbow occur later, and higher Global S values
 
-<<<<<<< HEAD
-```{r tempTest}
+```{r tempTest, cache=TRUE}
 
 S <- 5 # Num shifts
 
@@ -849,7 +844,7 @@ legend("bottomright", legend=c("globalS.robust", "globalS"), pch='o', col=c("bla
 
 ```
 
-```{r}
+```{r, fig.width=7, fig.height=7}
 
 # Large (many)
 plot(  temp.bner.diff.large$num.cells, temp.bner.diff.large$globalS, ylim=c(0.7,1), main="Many points - DIFF", pch="o", cex=0.5)
@@ -857,8 +852,10 @@ points(temp.bner.diff.small$num.cells, temp.bner.diff.small$globalS, ylim=c(0,1)
 legend("bottomright", legend=c("many points", "few points"), col=c("black", "red"), pch="o", cex=1)
 
 ```
-=======
+
+
 For info, graph those errors.
+
 
 ```{r graph.bner.result, fig.width=10, fig.height=10 }
 errors.temp <- c("rss", "r.squared", "rmse", "globalS", "globalS.robust", "mean.similarity", "mean.similarity.robust") # The error stats. to use
@@ -884,12 +881,11 @@ for (e in errors.temp) {
 }
 
 
-do.call("grid.arrange", c(plots, ncol=4))
+do.call("grid.arrange", c(plots, ncol=len(errors.temp)))
 rm(errors.temp)
 
 ```
 
->>>>>>> a7cfed73bea5022fe35277d456da824b2e4dd5b9
 
 ## Spatial Error Resolution
 
@@ -950,18 +946,17 @@ for (i in 1:length(all.diff)) {
   }
 }
 
-do.call("grid.arrange", c(plots, ncol=5))
+do.call("grid.arrange", c(plots, ncol=len(error.stats)))
 
 #g <- grid.arrange(plot1, plot2, nrow=2)
 ```
 
 
-<<<<<<< HEAD
 ### Graphs for ECCA - examining Global S Index changes
 
 Graph each crime as a separate plot
 
-```{r s.index-ecca_graphs1, fig.width=7, fig.height=4 }
+```{r s.index-ecca_graphs1, fig.width=7, fig.height=7 }
 
 # Make some lists so that the same plotting code can loop 
 crime.types = vapply(X=all, FUN=function(x)x$name, FUN.VALUE = character(1)) # The crime types (4)
@@ -986,7 +981,7 @@ for (i in 1:length(crime.types)) { # For each crime type
 
 Try again with confidence intervals
 
-```{r s.index-ecca_graphs-withci, fig.width=7, fig.height=4 }
+```{r s.index-ecca_graphs-withci, fig.width=7, fig.height=7 }
 
 # Make some lists so that the same plotting code can loop 
 crime.types = vapply(X=all, FUN=function(x)x$name, FUN.VALUE = character(1)) # The crime types (4)
@@ -1025,7 +1020,7 @@ grid.arrange(plots[[1]],plots[[2]],plots[[3]], plots[[4]], nrow=2, ncol=2)
 
 Graph them all on the same plot
 
-```{r s.index-ecca_graphs-sameplot, fig.width=7, fig.height=4 }
+```{r s.index-ecca_graphs-sameplot, fig.width=10, fig.height=7 }
 
 # Make some lists so that the same plotting code can loop
 crime.types = vapply(X=all, FUN=function(x)x$name, FUN.VALUE = character(1)) # The crime types (4)
@@ -1060,11 +1055,7 @@ for (i in 1:length(crime.types)) { # For each crime type
 ```
 
 
-### Comparing Global S Index results from different methods (sppt, sppt_diff, sppt_boot)
-=======
-
 ### Comparing different Local S Index results
->>>>>>> a7cfed73bea5022fe35277d456da824b2e4dd5b9
 
 Above we computed the S Index using the 'normal' method, as well as the new 'bootstrap' (`sppt_boot`) and 'proportional difference' (`sppt_diff`). Compare the results for each crime type now using the non-robust index. Also mark on the graphs the points at which I will draw the maps below
 
@@ -1276,8 +1267,6 @@ for (i in 4:1) {
 }
 ```
 
-<<<<<<< HEAD
-=======
 Also do a fuzzy map of the difference in local S values.
 
 ```{r map.globalS.fuzzy, fig.width=6, fig.height=5}
@@ -1314,7 +1303,6 @@ for ( index in results.to.map) {
 
 choro.legend("topright", sh=s.noalpha, cex=0.8)
 ```
->>>>>>> a7cfed73bea5022fe35277d456da824b2e4dd5b9
 
 
 
