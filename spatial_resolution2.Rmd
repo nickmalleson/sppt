@@ -107,8 +107,10 @@ Sys.setenv(MC_CORES=no_cores) # Run on n cores (I'm not sure which of these
 options("mc.cores"=no_cores) # is correct).
 library(Deriv)   # For calculating deriviatives
 library(leaflet) # For doing interactive maps
-library(ShapeChange) # For calculating step change
+#library(ShapeChange) # For calculating step change
 library(feather) #For writing to python
+library(ggplot2)  # For graphs
+library(gridExtra) # For arranging two grids side by side
 
 
 # The spatial point pattern test library. See https://github.com/wsteenbeek/sppt for install instructions. Basically:
@@ -711,7 +713,7 @@ tob.result.diff <- msea(points1 = p1, points2 = p2,
 
 rm(p1, p2) # tidy up
 
-# Delete old files
+# Delete old files, including some shapefiles that are created  later in chunk map.iterations
 files <- list.files(path = "./ROUT", pattern = "bner_result")
 for (f in files) { file.remove(paste0("./ROUT/",f)) }
 files <- list.files(path = "./ROUT", pattern = "tob_result")
@@ -736,7 +738,92 @@ write.csv( data.frame(sapply(
 #save.image('temp.RData')
 ```
 
+Quick test: doesif we do the analysis with more points, we should see the elbow occur later, and higher Global S values
 
+```{r tempTest}
+
+S <- 5 # Num shifts
+
+# DIFF
+
+temp.bner.diff.small <- msea(
+  points1 = BNER[BNER$YEAR==2015,], 
+  points2 = BNER[BNER$YEAR==2016,],
+  N=40, n.shifts=S, mask=vancouver.boundaries, ignore.zeros = F, step=STEP, return.sobject=TRUE, return.grids=TRUE,
+  sppt_func = sppt_diff, adj = "none" # (note additional argument to sppt_diff)
+  )
+gc()
+temp.bner.diff.large <- msea(
+  points1 = BNER[BNER$YEAR==2016 | BNER$YEAR==2014 | BNER$YEAR==2012 | BNER$YEAR==2010 | BNER$YEAR==2008,],
+  points2 = BNER[BNER$YEAR==2015 | BNER$YEAR==2013 | BNER$YEAR==2011 | BNER$YEAR==2009 | BNER$YEAR==2007,],
+  N=40, n.shifts=S, mask=vancouver.boundaries, ignore.zeros = F, step=STEP, return.sobject=TRUE, return.grids=TRUE,
+  sppt_func = sppt_diff, adj = "none" # (note additional argument to sppt_diff)
+  )
+gc()
+
+# NORMAL 
+
+temp.bner.norm.small <- msea(
+  points1 = BNER[BNER$YEAR==2015,], 
+  points2 = BNER[BNER$YEAR==2016,],
+  N=40, n.shifts=S, mask=vancouver.boundaries, ignore.zeros = F, step=STEP, return.sobject=TRUE, return.grids=TRUE,
+  sppt_func = sppt )
+gc()
+
+temp.bner.norm.large <- msea(
+  points1 = BNER[BNER$YEAR==2016 | BNER$YEAR==2014 | BNER$YEAR==2012 | BNER$YEAR==2010 | BNER$YEAR==2008,],
+  points2 = BNER[BNER$YEAR==2015 | BNER$YEAR==2013 | BNER$YEAR==2011 | BNER$YEAR==2009 | BNER$YEAR==2007,],
+  N=40, n.shifts=S, mask=vancouver.boundaries, ignore.zeros = F, step=STEP, return.sobject=TRUE, return.grids=TRUE,
+  sppt_func = sppt )
+gc()
+
+```
+
+```{r fig.width=9, fig.height=6}
+# PLOT 
+
+par(mfrow=c(2,2))
+
+# DIFF
+
+# Small (few)
+plot(  temp.bner.diff.small$num.cells, temp.bner.diff.small$globalS.robust, ylim=c(0,1), main="Few points - DIFF")
+points(temp.bner.diff.small$num.cells, temp.bner.diff.small$globalS, ylim=c(0,1), col="red")
+legend("bottomright", legend=c("globalS.robust", "globalS"), pch='o', col=c("black", "red"))
+
+# Large (many)
+plot(  temp.bner.diff.large$num.cells, temp.bner.diff.large$globalS.robust, ylim=c(0,1), main="Many points - DIFF")
+points(temp.bner.diff.large$num.cells, temp.bner.diff.large$globalS, ylim=c(0,1), col="red")
+legend("bottomright", legend=c("globalS.robust", "globalS"), pch='o', col=c("black", "red"))
+
+# NORMAL
+
+plot(  temp.bner.norm.small$num.cells, temp.bner.norm.small$globalS.robust, ylim=c(0,1), main="Few points - Normal")
+points(temp.bner.norm.small$num.cells, temp.bner.norm.small$globalS, ylim=c(0,1), col="red")
+legend("bottomright", legend=c("globalS.robust", "globalS"), pch='o', col=c("black", "red"))
+
+# Large (many)
+plot(  temp.bner.norm.large$num.cells, temp.bner.norm.large$globalS.robust, ylim=c(0,1), main="Many points - Normal")
+points(temp.bner.norm.large$num.cells, temp.bner.norm.large$globalS, ylim=c(0,1), col="red")
+legend("bottomright", legend=c("globalS.robust", "globalS"), pch='o', col=c("black", "red"))
+
+#write.csv(cbind(temp.bner.diff.large$iteration, temp.bner.diff.large$num.cells, temp.bner.diff.large$globalS, temp.bner.diff.small$globalS), file="~/Desktop/temp.csv")
+
+#write.csv(temp.bner.diff.large$results[[5]]@data, file="~/Desktop/large_05.csv" )
+#write.csv(temp.bner.diff.large$results[[39]]@data, file="~/Desktop/large_39.csv" )
+#write.csv(temp.bner.diff.small$results[[5]]@data, file="~/Desktop/small_05.csv" )
+#write.csv(temp.bner.diff.small$results[[39]]@data, file="~/Desktop/small_39.csv" )
+
+```
+
+```{r}
+
+# Large (many)
+plot(  temp.bner.diff.large$num.cells, temp.bner.diff.large$globalS, ylim=c(0.7,1), main="Many points - DIFF", pch="o", cex=0.5)
+points(temp.bner.diff.small$num.cells, temp.bner.diff.small$globalS, ylim=c(0,1), col="red", pch="o", cex=0.5)
+legend("bottomright", legend=c("many points", "few points"), col=c("black", "red"), pch="o", cex=1)
+
+```
 
 ## Spatial Error Resolution
 
@@ -765,7 +852,110 @@ for (a in all.diff) {
 ```
 
 
-### Comparing different Local S Index results
+### Graphs for ECCA - examining Global S Index changes
+
+Graph each crime as a separate plot
+
+```{r s.index-ecca_graphs1, fig.width=7, fig.height=4 }
+
+# Make some lists so that the same plotting code can loop 
+crime.types = vapply(X=all, FUN=function(x)x$name, FUN.VALUE = character(1)) # The crime types (4)
+
+
+
+#s.type = "globalS.robust" # Whether to use robust or non-robust
+s.type = "globalS"
+
+par(mfrow=c(2,2)) # One plot for each crime type
+
+for (i in 1:length(crime.types)) { # For each crime type
+  crime.type <- crime.types[i]
+  r <- all.diff[[i]]$r # This is the results of the test for the crime type
+  x <- r[["num.cells"]] 
+  y <- r[[s.type]] # The S Index (either normal or robust)
+    
+  plot(x,y, main=paste0(crime.type), xlab="Number of Cells", ylab="Similarity",  ylim=c(0,1), xlim=c(0,1000))
+}
+
+```
+
+Try again with confidence intervals
+
+```{r s.index-ecca_graphs-withci, fig.width=7, fig.height=4 }
+
+# Make some lists so that the same plotting code can loop 
+crime.types = vapply(X=all, FUN=function(x)x$name, FUN.VALUE = character(1)) # The crime types (4)
+
+colours  <- brewer.pal(4, "Set2") # Colours for the points
+
+#s.type = "globalS.robust" # Whether to use robust or non-robust
+s.type = "globalS"
+
+plots = list()
+
+for (i in 1:length(crime.types)) { # For each crime type
+  crime.type <- crime.types[i]
+  r <- all.diff[[i]]$r # This is the results of the test for the crime type
+  x <- r[["num.cells"]] 
+  y <- r[[s.type]] # The S Index (either normal or robust)
+  df = data.frame("NumCells"=r[["num.cells"]], "Similarity"=r[[s.type]] )
+  
+  plots[[i]] <- ggplot(df, aes(NumCells, Similarity)) +
+    #geom_hex(bins=20) +
+    geom_point(size=2) + 
+    #guides(colour=guide_legend(title="Sensor")) + # Change the title of the legend
+    #geom_smooth(se=TRUE, level=0.99)
+    geom_smooth(method="loess", se=TRUE, level=0.99, color=colours[i])
+
+    #scale_colour_manual(values=cols)+
+    #ylab("Number of people")+
+    #xlab("Hour")
+}
+
+#plots[[1]]
+
+grid.arrange(plots[[1]],plots[[2]],plots[[3]], plots[[4]], nrow=2, ncol=2)
+
+```
+
+Graph them all on the same plot
+
+```{r s.index-ecca_graphs-sameplot, fig.width=7, fig.height=4 }
+
+# Make some lists so that the same plotting code can loop
+crime.types = vapply(X=all, FUN=function(x)x$name, FUN.VALUE = character(1)) # The crime types (4)
+colours  <- brewer.pal(4, "Set2") # Colours for the points
+
+
+#s.type = "globalS.robust" # Whether to use robust or non-robust
+s.type = "globalS"
+
+par(mfrow=c(1,1)) # One plot for each crime type
+
+for (i in 1:length(crime.types)) { # For each crime type
+  crime.type <- crime.types[i]
+  r <- all.diff[[i]]$r # This is the results of the test for the crime type
+  x <- r[["num.cells"]] 
+  y <- r[[s.type]] # The S Index (either normal or robust)
+  if (i==1) {
+    plot(x,y, main="Global S Index by Crime Type", xlab="Cell Area (ha)", ylab="Similarity",  
+           xlim=c(0,1000), ylim=c(0.5,1), col=colours[i], pch=i, cex=2, xaxt='n')
+    #axis(1, at=x, labels=r[["num.cells"]])
+    axis(1, at=x, labels=round(r[["cell.areas"]]/10000) )
+      
+  } else {
+    points(x,y, col=colours[i], pch=i)
+  }
+  legend("topright", legend = crime.types,  pch=1:length(crime.types), col = colours, cex=2)
+  
+}
+
+
+
+```
+
+
+### Comparing Global S Index results from different methods (sppt, sppt_diff, sppt_boot)
 
 Above we computed the S Index using the 'normal' method, as well as the new 'bootstrap' (`sppt_boot`) and 'proportional difference' (`sppt_diff`). Compare the results for each crime type now using the non-robust index. Also mark on the graphs the points at which I will draw the maps below
 
@@ -874,12 +1064,12 @@ options(scipen=10)
 count <- 1
 for (index in indices.to.map) {
   num.cells <- bner.result.diff[["num.cells"]][index]
-  sq.area <- bner.result.diff[["cell.areas"]][index] / 1000000
+  sq.area <- bner.result.diff[["cell.areas"]][index] / 10000 # hectares
   grid <- bner.result.diff[["results"]][[index]]
   plot(vancouver.boundaries, main=paste0("BNER"), lwd=0.5, col="gray", lty='dashed')
   plot(grid, border=line.colours[count], lwd=2, add=T )
   text(x=grid@bbox["x", "min"], y=grid@bbox["y", "max"], cex=2,
-       labels = paste0("Num Cells: ",num.cells, "\nSquare Area: " ,round(sq.area, digits = 2)) )
+       labels = paste0("Num Cells: ",num.cells, "\nSquare Area (ha): " ,round(sq.area)) )
   #print(bner.result.diff[["results"]][[index]])
   
 
@@ -917,7 +1107,7 @@ options(scipen=10)
 count <- 1
 for (index in indices.to.map) {
   num.cells <- bner.result.diff[["num.cells"]][index]
-  sq.area <- bner.result.diff[["cell.areas"]][index] / 1000000
+  sq.area <- bner.result.diff[["cell.areas"]][index] / 10000 # hectares
   grid <- bner.result.diff[["results"]][[index]]
   plot(vancouver.boundaries, main=paste0("BNER"), lwd=0.5, col="gray", lty='dashed', axes=T,
        xlim=c(490000,491000), ylim = c(5458000,5460000) )
@@ -928,186 +1118,55 @@ for (index in indices.to.map) {
 ```
 
 
-## Future work: Analysis of change-point using Bayesian Inference
-
-### Change-point using Bayesian inference 
-
-Try to identify the change point using Bayesian inference. This example is taking from the 'Inferring Behaviour From Text-Message Data' in the Bayesian Methods for Hackers book.
-
-Test on burglary, if we get anywhere then maybe try with other crimes as well.
-
-Write the results out to a binary file using `feather`, then do the analysis in python.
-
-```{r feathter }
-# Give the results lists some names (not necessary but makes things easier) (these were defined earlier)
-names(test.results) <- names
-for (i in 1:length(test.results)) {
-  names(test.results[[i]]) <- crime.types
-}
-
-bner.results.feather <- data.frame(
-  "iteration" = test.results[["Proportional Difference"]][["BNER"]]$r$iteration,
-  "num.cells" = test.results[["Proportional Difference"]][["BNER"]]$r$num.cells,
-  "global_s"  = test.results[["Proportional Difference"]][["BNER"]]$r$globalS
-  
-)
-
-# Sanity check that these are the same as the results as the ones generated initially, before being organised into lists
-stopifnot( identical(all.diff[[1]]$r$num.cells, bner.results.feather$num.cells) )
-stopifnot( identical(all.diff[[1]]$r$globalS,   bner.results.feather$global_s) )
-
-#plot(bner.results.feather$num.cells, bner.results.feather$global_s)
-
-# Write the results
-write_feather(bner.results.feather, path="./bner_results.feather")
-
-```
-
-Now use the script 'changepoint_mcmc.ipynb'  to look for the change point. _No changepoint is found_ :-(
-
-
-### Analysis of change-point using `ShapeChange` 
-
-Identify change-point(s) in the graphs of error against resolution using the `ShapeChange` package
-
-Begin by calculating the change-point using the BNER and TOB example results.
-
-```{r changepoints-burgd.example, fig.width=9, fig.height=6 }
-
-# I like my own changepoint plots
-plot.changept <- function(cp, ... ) {
-  plot(cp$x, cp$y, cex=0.2, xlab="Number of Cells", ylab="Global S", ...)
-  abline(v=cp$chpt, col="#fc8d62") # The changepoint
-  abline(v=cp$cibt[1], col="#8da0cb" ) # Lower CI
-  abline(v=cp$cibt[2], col="#8da0cb" ) # Upper CI
-  lines(x=cp$x, y=cp$fhat, lty="dashed", col="#66c2a5", lwd=1.0) # the estimated mean curve
-  legend("bottomleft", legend=c("Estimated mean curve", "Estimated change-point", "Upper/Lower confidence 95% confidence intervals"),
-        lty = c("dashed","solid","solid"), col=c("#66c2a5", "#fc8d62", "#8da0cb"), cex=0.5)
-}
-
-# Burglary
-bner.changepoint <- changept(bner.result.diff[["globalS"]] ~ tp(bner.result.diff[["num.cells"]], sh = 1), 
-                             pnt = TRUE, ci = TRUE, param = FALSE) 
-# TOB
-tob.changepoint <-  changept(tob.result.diff[["globalS"]] ~ tp(tob.result.diff[["num.cells"]], sh = 1), 
-                             pnt = TRUE, ci = TRUE, param = FALSE) 
-
-
-par(mfrow=c(1,2))
-plot.changept(bner.changepoint, main="Burglary", ylim=c(0.5,1))
-plot.changept(tob.changepoint,  main="TOB", ylim=c(0.5,1))
-```
-
-Now calculate the change-points using the full tests.
-
-```{r changepoints-1, fig.width=9, fig.height=9 }
-# Calculate all four changepoints (one for each crime type) at once
-ch <- mclapply(X=seq(1,length(all)), FUN=function(x) {
-  changept(all[[x]]$r$globalS ~ tp(all[[x]]$r$num.cells, sh = 1), pnt = TRUE, ci = TRUE, param = FALSE)   
-  } 
-)
-
-par(mfrow=c(2,2))
-for (i in seq(length(all))) {
-  #r <- all[[i]]$r # This is the results of the msea test
-  name <- all[[i]]$name # This is the name of the crime type
-  c <- ch[[i]]
-  #base <- a$base 
-  #test <- a$test
-  #x <- r$num.cells
-  #y <- r$globalS
-  #c <- changept(y ~ tp(x, sh = 1), pnt = TRUE, ci = TRUE, param = FALSE)   
-  plot.changept(c, main=name, ylim=c(0,1))
-}
- 
-
-```
-
-Repeat but disregarding the later calculations 
-
-```{r changepoints-2, fig.width=9, fig.height=9 }
-
-START=10
-END=200
-
-# Calculate all four changepoints at once
-ch <- mclapply(X=seq(1,length(all)), FUN=function(x) {
-  changept(all[[x]]$r$globalS[START:END] ~ tp(all[[x]]$r$num.cells[START:END], sh = 1), pnt = TRUE, ci = TRUE, param = FALSE)   
-  } 
-)
-
-par(mfrow=c(2,2))
-for (i in seq(length(all))) {
-  name <- all[[i]]$name # This is the name of the crime type
-  c <- ch[[i]]
-  plot.changept(c, main=name, ylim=c(0,1))
-}
- 
-
-```
-
-
 
 
 ## Map the Local S Index
 
 Map the Local S for a few grids, just out of interest
 
-```{r map.globalS, fig.width=8, fig.height=6 }
+```{r map.localS, fig.width=8, fig.height=6 }
 statistic <- "localS" # The statistic to map
 
 par(mfrow=c(2,2))
 
 for (i in 4:1) {
-  index <- round(length(bner.result$results) / i )
+  index <- round(length(bner.result.diff$results) / i )
   
   # Create the shading manually
   s <- list("breaks"=c(-0.5, 0, 0.5), "cols"=c("#fc8d59","#ffffbf", "#ffffbf","#99d594"))
   
-  choropleth(bner.result$results[[index]], bner.result$results[[index]]@data[,statistic], main=paste(statistic,i),
+  choropleth(bner.result.diff$results[[index]], bner.result.diff$results[[index]]@data[,statistic], main=paste(statistic,i),
              lty=0, shading = s)
-  points(p1, col='blue', cex=0.5)
-  points(p2, col='red',  cex=0.5)
+  #points(p1, col='blue', cex=0.5)
+  #points(p2, col='red',  cex=0.5)
   choro.legend("topright", sh = s, cex=0.5)
 }
 ```
 
-Also do a fuzzy map of the difference in local S values.
+Now do _similarity_ (calculated by sppt_diff)
 
-```{r map.globalS.fuzzy, fig.width=6, fig.height=5}
-# Maximum number of results we can map is 256 because transparency is represented by a two-digit hex
-# I actually set this as lower otherwise it doesn't work (all the colours add up to red)
-results.to.map <- NA
-if (length(bner.result$results) > 50) {
-  results.to.map <- sample(x=1:length(bner.result$results), size=50, replace = FALSE )
-  print("Only mapping 50 of all grids ")
-} else {
-  results.to.map <- 1:(length(bner.result$results)-1)
+
+Map the Local S for a few grids, just out of interest
+
+```{r map.similarity, fig.width=8, fig.height=6 }
+statistic <- "similarity" # The statistic to map
+
+par(mfrow=c(2,2))
+
+for (i in 4:1) {
+  index <- round(length(bner.result.diff$results) / i )
+  
+  # Create the shading manually
+  s <- list("breaks"=c(-0.5, 0, 0.5), "cols"=c("#fc8d59","#ffffbf", "#ffffbf","#99d594"))
+  
+  choropleth(bner.result.diff$results[[index]], bner.result.diff$results[[index]]@data[,statistic], main=paste(statistic,i),
+             lty=0, shading = s)
+  #points(p1, col='blue', cex=0.5)
+  #points(p2, col='red',  cex=0.5)
+  choro.legend("topright", sh = s, cex=0.5)
 }
-
-par(mfrow=c(1,1))
-last.result <- bner.result$results[[length(bner.result$results)]] # Convenience for list result generated (the smallest grid)
-
-# Shading
-s.noalpha <- list("breaks"=c(-0.5, 0, 0.5), 
-                  #"cols"=c("#fc8d59","#ffffbf", "#ffffbf","#99d594"))
-                  "cols"=c("#FF0000","#00FF00", "#00FF00","#0000FF")) # r,g, b
-s         <- list("breaks"=c(-0.5, 0, 0.5), 
-                  #"cols"=add.alpha(c("#fc8d59","#ffffbf", "#ffffbf","#99d594"), 1/length(results.to.map)))
-                  "cols"=add.alpha(c("#FF0000","#00FF00", "#00FF00","#0000FF"), 1/length(results.to.map))) # r, g, b
-
-choropleth(
-  last.result, last.result@data[,statistic], shading = s, main=paste0("Fuzzy ",statistic), lty=0
-  )
-
-for ( index in results.to.map) {
-  choropleth( bner.result$results[[index]], bner.result$results[[index]]@data[,statistic], shading = s, lty=0, add=TRUE )
-}
-
-# For the legend, redo the shading as above but without the alpha (don't want the legend colours to be transparent)
-
-choro.legend("topright", sh=s.noalpha, cex=0.8)
 ```
+
 
 
 
