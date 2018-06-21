@@ -688,8 +688,8 @@ gc() # Do some garbage collection after deleting the big temporary objects (mayb
 # Finish with the difference in proportions
 tmp <- lapply(X = all, FUN = function(x) { 
   msea(x[['base']], x[['test']], N=N, n.shifts=N.SHIFTS, mask=vancouver.boundaries,
-       ignore.zeros = F, step=STEP, 
-       return.sobject=FALSE, return.grids=FALSE, sppt_func = sppt_diff, adj = "none" # (note additional argument to sppt_diff)
+       ignore.zeros = F, step=STEP, return.sobject=FALSE, return.grids=FALSE, 
+       sppt_func = sppt_diff, adj = "none", test="Fisher" # (note additional argument to sppt_diff)
   ) })
 stopifnot(length(tmp)==4)
 # Store the results in the lists in an item called 'r'
